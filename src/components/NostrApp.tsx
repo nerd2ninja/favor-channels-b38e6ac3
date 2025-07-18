@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Zap, Send, Key, Users, Globe, Heart, MessageCircle, Repeat2 } from 'lucide-react';
+import { Zap, Send, Key, Users, Globe, Heart, MessageCircle, Repeat2, Search, User } from 'lucide-react';
 import { Relay, Event, nip19, getPublicKey } from 'nostr-tools';
+import BottomNav from './BottomNav';
+import FavorsTab from './FavorsTab';
 
 interface NostrEvent extends Event {
   created_at: number;
@@ -30,6 +32,7 @@ export default function NostrApp() {
   const [privateKey, setPrivateKey] = useState<string>('');
   const [publicKey, setPublicKey] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
+  const [activeTab, setActiveTab] = useState('home');
   const [newNote, setNewNote] = useState('');
   const [events, setEvents] = useState<NostrEvent[]>([]);
   const [profile, setProfile] = useState({ name: '', about: '' });
@@ -205,6 +208,138 @@ export default function NostrApp() {
     return pubkey.slice(0, 8) + '...' + pubkey.slice(-8);
   };
 
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'favors':
+        return <FavorsTab />;
+      case 'search':
+        return (
+          <div className="space-y-4 pb-20">
+            <div className="text-center py-12">
+              <Search className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Search & Discovery</h3>
+              <p className="text-muted-foreground">Coming soon! Find users and content across Nostr.</p>
+            </div>
+          </div>
+        );
+      case 'messages':
+        return (
+          <div className="space-y-4 pb-20">
+            <div className="text-center py-12">
+              <MessageCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Direct Messages</h3>
+              <p className="text-muted-foreground">Coming soon! Private messaging with end-to-end encryption.</p>
+            </div>
+          </div>
+        );
+      case 'profile':
+        return (
+          <div className="space-y-4 pb-20">
+            <div className="text-center py-12">
+              <User className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Profile</h3>
+              <p className="text-muted-foreground mb-4">Manage your Nostr identity and settings.</p>
+              <Badge variant="outline" className="text-xs">
+                {shortenPubkey(publicKey)}
+              </Badge>
+            </div>
+          </div>
+        );
+      default: // 'home'
+        return (
+          <div className="space-y-4 pb-20">
+            {/* Compose Note */}
+            <Card className="shadow-elegant">
+              <CardContent className="p-4">
+                <div className="space-y-3">
+                  <Textarea
+                    placeholder="What's on your mind?"
+                    value={newNote}
+                    onChange={(e) => setNewNote(e.target.value)}
+                    className="min-h-[100px] resize-none border-0 focus-visible:ring-0 text-base"
+                  />
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">
+                      {newNote.length}/280
+                    </span>
+                    <Button 
+                      onClick={publishNote}
+                      disabled={!newNote.trim()}
+                      className="bg-gradient-primary hover:opacity-90 transition-opacity"
+                    >
+                      <Send className="mr-2 h-4 w-4" />
+                      Publish
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Feed */}
+            <div className="space-y-4">
+              {events.length === 0 ? (
+                <Card className="shadow-elegant">
+                  <CardContent className="p-8 text-center">
+                    <div className="mb-4">
+                      <MessageCircle className="h-12 w-12 mx-auto text-muted-foreground" />
+                    </div>
+                    <h3 className="text-lg font-semibold mb-2">No notes yet</h3>
+                    <p className="text-muted-foreground">
+                      Be the first to publish a note or wait for others to appear!
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                events.map((event) => (
+                  <Card key={event.id} className="shadow-elegant hover:shadow-glow transition-shadow duration-300">
+                    <CardContent className="p-4">
+                      <div className="flex space-x-3">
+                        <Avatar className="h-10 w-10">
+                          <AvatarFallback className="bg-gradient-primary text-white font-semibold">
+                            {event.pubkey.slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <span className="font-medium text-sm">
+                              {shortenPubkey(event.pubkey)}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {formatTime(event.created_at)}
+                            </span>
+                          </div>
+                          
+                          <p className="text-foreground whitespace-pre-wrap mb-3">
+                            {event.content}
+                          </p>
+                          
+                          <div className="flex items-center space-x-6 text-muted-foreground">
+                            <button className="flex items-center space-x-1 hover:text-blue-500 transition-colors">
+                              <MessageCircle className="h-4 w-4" />
+                              <span className="text-xs">Reply</span>
+                            </button>
+                            <button className="flex items-center space-x-1 hover:text-green-500 transition-colors">
+                              <Repeat2 className="h-4 w-4" />
+                              <span className="text-xs">Repost</span>
+                            </button>
+                            <button className="flex items-center space-x-1 hover:text-red-500 transition-colors">
+                              <Heart className="h-4 w-4" />
+                              <span className="text-xs">Like</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          </div>
+        );
+    }
+  };
+
   if (!privateKey) {
     return (
       <div className="min-h-screen bg-gradient-subtle flex items-center justify-center p-4">
@@ -285,94 +420,10 @@ export default function NostrApp() {
       </header>
 
       <div className="container mx-auto px-4 py-6 max-w-2xl">
-        {/* Compose Note */}
-        <Card className="mb-6 shadow-elegant">
-          <CardContent className="p-4">
-            <div className="space-y-3">
-              <Textarea
-                placeholder="What's on your mind?"
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-                className="min-h-[100px] resize-none border-0 focus-visible:ring-0 text-base"
-              />
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">
-                  {newNote.length}/280
-                </span>
-                <Button 
-                  onClick={publishNote}
-                  disabled={!newNote.trim()}
-                  className="bg-gradient-primary hover:opacity-90 transition-opacity"
-                >
-                  <Send className="mr-2 h-4 w-4" />
-                  Publish
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Feed */}
-        <div className="space-y-4">
-          {events.length === 0 ? (
-            <Card className="shadow-elegant">
-              <CardContent className="p-8 text-center">
-                <div className="mb-4">
-                  <MessageCircle className="h-12 w-12 mx-auto text-muted-foreground" />
-                </div>
-                <h3 className="text-lg font-semibold mb-2">No notes yet</h3>
-                <p className="text-muted-foreground">
-                  Be the first to publish a note or wait for others to appear!
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            events.map((event) => (
-              <Card key={event.id} className="shadow-elegant hover:shadow-glow transition-shadow duration-300">
-                <CardContent className="p-4">
-                  <div className="flex space-x-3">
-                    <Avatar className="h-10 w-10">
-                      <AvatarFallback className="bg-gradient-primary text-white font-semibold">
-                        {event.pubkey.slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <span className="font-medium text-sm">
-                          {shortenPubkey(event.pubkey)}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatTime(event.created_at)}
-                        </span>
-                      </div>
-                      
-                      <p className="text-foreground whitespace-pre-wrap mb-3">
-                        {event.content}
-                      </p>
-                      
-                      <div className="flex items-center space-x-6 text-muted-foreground">
-                        <button className="flex items-center space-x-1 hover:text-blue-500 transition-colors">
-                          <MessageCircle className="h-4 w-4" />
-                          <span className="text-xs">Reply</span>
-                        </button>
-                        <button className="flex items-center space-x-1 hover:text-green-500 transition-colors">
-                          <Repeat2 className="h-4 w-4" />
-                          <span className="text-xs">Repost</span>
-                        </button>
-                        <button className="flex items-center space-x-1 hover:text-red-500 transition-colors">
-                          <Heart className="h-4 w-4" />
-                          <span className="text-xs">Like</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </div>
+        {renderTabContent()}
       </div>
+
+      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
     </div>
   );
 }
