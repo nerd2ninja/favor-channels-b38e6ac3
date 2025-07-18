@@ -10,6 +10,7 @@ import { Zap, Send, Key, Users, Globe, Heart, MessageCircle, Repeat2, Search, Us
 import { Relay, Event, nip19, getPublicKey } from 'nostr-tools';
 import BottomNav from './BottomNav';
 import FavorsTab from './FavorsTab';
+import FavorChannelsTab from './FavorChannelsTab';
 
 interface NostrEvent extends Event {
   created_at: number;
@@ -212,6 +213,8 @@ export default function NostrApp() {
     switch (activeTab) {
       case 'favors':
         return <FavorsTab />;
+      case 'favor-channels':
+        return <FavorChannelsTab />;
       case 'search':
         return (
           <div className="space-y-4 pb-20">
