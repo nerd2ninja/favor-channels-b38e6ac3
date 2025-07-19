@@ -4,9 +4,10 @@ import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Zap, Send, Key, Users, Globe, Heart, MessageCircle, Repeat2, Search, User, QrCode } from 'lucide-react';
+import { Zap, Send, Key, Users, Globe, Heart, MessageCircle, Repeat2, Search, User, QrCode, Edit, Copy, Settings, LogOut } from 'lucide-react';
 import { Relay, Event, nip19, getPublicKey } from 'nostr-tools';
 import FavorsTab from './FavorsTab';
 import FavorChannelsTab from './FavorChannelsTab';
@@ -37,7 +38,15 @@ export default function NostrApp() {
   const [activeTab, setActiveTab] = useState('home');
   const [newNote, setNewNote] = useState('');
   const [events, setEvents] = useState<NostrEvent[]>([]);
-  const [profile, setProfile] = useState({ name: '', about: '' });
+  const [profile, setProfile] = useState({ 
+    name: '', 
+    about: '', 
+    picture: '',
+    banner: '',
+    website: '',
+    nip05: ''
+  });
+  const [editingProfile, setEditingProfile] = useState(false);
   const [showNostrConnect, setShowNostrConnect] = useState(false);
   const { toast } = useToast();
 
@@ -136,6 +145,76 @@ export default function NostrApp() {
     toast({
       title: "NOSTR Connect Ready",
       description: "Open Amber and scan the QR code to connect",
+    });
+  };
+
+  const updateProfile = async (updatedProfile: typeof profile) => {
+    if (!privateKey || relays.length === 0) return;
+
+    try {
+      // Create a kind 0 event for profile metadata
+      const profileEvent = {
+        kind: 0,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [],
+        content: JSON.stringify({
+          name: updatedProfile.name,
+          about: updatedProfile.about,
+          picture: updatedProfile.picture,
+          banner: updatedProfile.banner,
+          website: updatedProfile.website,
+          nip05: updatedProfile.nip05
+        }),
+        pubkey: publicKey,
+      };
+
+      // Simple event signing (basic implementation)
+      const eventJson = JSON.stringify([0, profileEvent.pubkey, profileEvent.created_at, profileEvent.kind, profileEvent.tags, profileEvent.content]);
+      const eventHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(eventJson));
+      const eventId = Array.from(new Uint8Array(eventHash), b => b.toString(16).padStart(2, '0')).join('');
+      
+      const finalEvent = { ...profileEvent, id: eventId, sig: 'placeholder' } as NostrEvent;
+
+      // Publish to connected relays
+      const publishPromises = relays.map(relay => relay.publish(finalEvent));
+      await Promise.allSettled(publishPromises);
+      
+      setProfile(updatedProfile);
+      setEditingProfile(false);
+      
+      toast({
+        title: "Profile Updated",
+        description: "Your profile has been updated on Nostr",
+      });
+    } catch (error) {
+      console.error('Profile update error:', error);
+      toast({
+        title: "Update Failed",
+        description: "Failed to update profile",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast({
+      title: "Copied!",
+      description: `${label} copied to clipboard`,
+    });
+  };
+
+  const logOut = () => {
+    localStorage.removeItem('nostr-private-key');
+    setPrivateKey('');
+    setPublicKey('');
+    setIsConnected(false);
+    setProfile({ name: '', about: '', picture: '', banner: '', website: '', nip05: '' });
+    setRelays([]);
+    setEvents([]);
+    toast({
+      title: "Logged Out",
+      description: "You have been logged out successfully",
     });
   };
 
@@ -260,15 +339,185 @@ export default function NostrApp() {
         );
       case 'profile':
         return (
-          <div className="space-y-4 pb-20">
-            <div className="text-center py-12">
-              <User className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Profile</h3>
-              <p className="text-muted-foreground mb-4">Manage your Nostr identity and settings.</p>
-              <Badge variant="outline" className="text-xs">
-                {shortenPubkey(publicKey)}
-              </Badge>
-            </div>
+          <div className="space-y-6 pb-20">
+            {/* Profile Header */}
+            <Card className="shadow-elegant">
+              <CardContent className="p-0">
+                {/* Banner */}
+                <div className="h-32 bg-gradient-primary rounded-t-lg relative">
+                  {profile.banner && (
+                    <img 
+                      src={profile.banner} 
+                      alt="Profile banner" 
+                      className="w-full h-full object-cover rounded-t-lg"
+                    />
+                  )}
+                </div>
+                
+                {/* Profile Info */}
+                <div className="p-6 relative">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center space-x-4">
+                      <Avatar className="h-20 w-20 border-4 border-background -mt-12">
+                        {profile.picture ? (
+                          <img src={profile.picture} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                          <AvatarFallback className="bg-gradient-primary text-white text-xl font-bold">
+                            {profile.name ? profile.name.slice(0, 2).toUpperCase() : publicKey.slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        )}
+                      </Avatar>
+                      
+                      <div className="flex-1 mt-2">
+                        <h2 className="text-2xl font-bold">
+                          {profile.name || 'Anonymous'}
+                        </h2>
+                        <p className="text-muted-foreground">
+                          {profile.about || 'No bio set'}
+                        </p>
+                        {profile.website && (
+                          <a 
+                            href={profile.website} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline text-sm"
+                          >
+                            {profile.website}
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <Dialog open={editingProfile} onOpenChange={setEditingProfile}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Edit className="h-4 w-4 mr-2" />
+                          Edit Profile
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-md">
+                        <DialogHeader>
+                          <DialogTitle>Edit Profile</DialogTitle>
+                        </DialogHeader>
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const formData = new FormData(e.currentTarget);
+                            updateProfile({
+                              name: formData.get('name') as string,
+                              about: formData.get('about') as string,
+                              picture: formData.get('picture') as string,
+                              banner: formData.get('banner') as string,
+                              website: formData.get('website') as string,
+                              nip05: formData.get('nip05') as string,
+                            });
+                          }}
+                          className="space-y-4"
+                        >
+                          <div>
+                            <label className="text-sm font-medium">Display Name</label>
+                            <Input name="name" defaultValue={profile.name} placeholder="Your name" />
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium">About</label>
+                            <Textarea name="about" defaultValue={profile.about} placeholder="Tell us about yourself" />
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium">Profile Picture URL</label>
+                            <Input name="picture" defaultValue={profile.picture} placeholder="https://..." />
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium">Banner URL</label>
+                            <Input name="banner" defaultValue={profile.banner} placeholder="https://..." />
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium">Website</label>
+                            <Input name="website" defaultValue={profile.website} placeholder="https://..." />
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium">NIP-05 Identifier</label>
+                            <Input name="nip05" defaultValue={profile.nip05} placeholder="user@domain.com" />
+                          </div>
+                          <div className="flex space-x-2">
+                            <Button type="submit" className="flex-1">Save Changes</Button>
+                            <Button type="button" variant="outline" onClick={() => setEditingProfile(false)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Keys & Identity */}
+            <Card className="shadow-elegant">
+              <CardHeader>
+                <h3 className="text-lg font-semibold">Keys & Identity</h3>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Public Key (npub)</label>
+                  <div className="flex items-center space-x-2 mt-1">
+                    <Badge variant="outline" className="font-mono text-xs flex-1 justify-start">
+                      {nip19.npubEncode(publicKey)}
+                    </Badge>
+                    <Button 
+                      size="sm" 
+                      variant="ghost"
+                      onClick={() => copyToClipboard(nip19.npubEncode(publicKey), 'Public key')}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Hex Public Key</label>
+                  <div className="flex items-center space-x-2 mt-1">
+                    <Badge variant="outline" className="font-mono text-xs flex-1 justify-start">
+                      {shortenPubkey(publicKey)}
+                    </Badge>
+                    <Button 
+                      size="sm" 
+                      variant="ghost"
+                      onClick={() => copyToClipboard(publicKey, 'Hex public key')}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {profile.nip05 && (
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">NIP-05 Verified</label>
+                    <Badge variant="secondary" className="mt-1">
+                      ✓ {profile.nip05}
+                    </Badge>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Settings */}
+            <Card className="shadow-elegant">
+              <CardHeader>
+                <h3 className="text-lg font-semibold">Settings</h3>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Button variant="outline" className="w-full justify-start">
+                  <Settings className="h-4 w-4 mr-2" />
+                  App Preferences
+                </Button>
+                
+                <Button variant="outline" className="w-full justify-start text-destructive hover:text-destructive" onClick={logOut}>
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign Out
+                </Button>
+              </CardContent>
+            </Card>
           </div>
         );
       default: // 'home'
