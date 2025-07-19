@@ -19,22 +19,7 @@ export interface FavorMessage {
 // Mock private key for demo - in real app this would come from user's key management
 const MOCK_PRIVATE_KEY = new Uint8Array(32).fill(0xa);
 
-let favorChannels: FavorChannel[] = [
-  {
-    npub: 'npub1alice123456789abcdef',
-    favorsOwed: 2,
-    favorsOwedToThem: 5,
-    lastUpdated: new Date(),
-    messages: []
-  },
-  {
-    npub: 'npub1bob987654321fedcba',
-    favorsOwed: 3,
-    favorsOwedToThem: 1,
-    lastUpdated: new Date(),
-    messages: []
-  }
-];
+let favorChannels: FavorChannel[] = [];
 
 export function getFavorChannels(): FavorChannel[] {
   return [...favorChannels];
