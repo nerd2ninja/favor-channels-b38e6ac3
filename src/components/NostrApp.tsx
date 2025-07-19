@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Zap, Send, Key, Users, Globe, Heart, MessageCircle, Repeat2, Search, User } from 'lucide-react';
+import { Zap, Send, Key, Users, Globe, Heart, MessageCircle, Repeat2, Search, User, QrCode } from 'lucide-react';
 import { Relay, Event, nip19, getPublicKey } from 'nostr-tools';
 import FavorsTab from './FavorsTab';
 import FavorChannelsTab from './FavorChannelsTab';
@@ -38,6 +38,7 @@ export default function NostrApp() {
   const [newNote, setNewNote] = useState('');
   const [events, setEvents] = useState<NostrEvent[]>([]);
   const [profile, setProfile] = useState({ name: '', about: '' });
+  const [showNostrConnect, setShowNostrConnect] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -117,6 +118,25 @@ export default function NostrApp() {
         variant: "destructive",
       });
     }
+  };
+
+  const initiateNostrConnect = () => {
+    setShowNostrConnect(true);
+    // Generate a connection string for NOSTR Connect
+    const connectionString = `nostrconnect://amber?relay=wss://relay.damus.io&metadata=${encodeURIComponent(JSON.stringify({
+      name: "Nostr Favor App",
+      description: "A decentralized favor tracking application",
+      url: window.location.origin,
+      icons: [window.location.origin + "/favicon.ico"]
+    }))}`;
+    
+    // For now, show the connection string - in a real implementation, this would be a QR code
+    console.log('NOSTR Connect String:', connectionString);
+    
+    toast({
+      title: "NOSTR Connect Ready",
+      description: "Open Amber and scan the QR code to connect",
+    });
   };
 
   const subscribeToFeed = async () => {
@@ -371,6 +391,16 @@ export default function NostrApp() {
             >
               <Key className="mr-2 h-4 w-4" />
               Generate New Keys
+            </Button>
+            
+            <Button 
+              onClick={initiateNostrConnect} 
+              className="w-full" 
+              variant="outline"
+              size="lg"
+            >
+              <QrCode className="mr-2 h-4 w-4" />
+              NOSTR Connect QR Code
             </Button>
             
             <div className="relative">
