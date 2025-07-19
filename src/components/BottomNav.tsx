@@ -1,4 +1,4 @@
-import { Home, Heart, User, Search, MessageSquare } from 'lucide-react';
+import { Home, Heart, User, Search, MessageSquare, GitBranch, Network } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface BottomNavProps {
@@ -10,7 +10,8 @@ const tabs = [
   { id: 'home', label: 'Home', icon: Home },
   { id: 'search', label: 'Search', icon: Search },
   { id: 'favors', label: 'Favors', icon: Heart },
-  { id: 'favor-channels', label: 'Channels', icon: MessageSquare },
+  { id: 'favor-channels', label: 'Channels', icon: GitBranch },
+  { id: 'favor-network', label: 'Network', icon: Network },
   { id: 'messages', label: 'Messages', icon: MessageSquare },
   { id: 'profile', label: 'Profile', icon: User },
 ];

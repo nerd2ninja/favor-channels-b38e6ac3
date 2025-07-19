@@ -8,9 +8,10 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { Zap, Send, Key, Users, Globe, Heart, MessageCircle, Repeat2, Search, User } from 'lucide-react';
 import { Relay, Event, nip19, getPublicKey } from 'nostr-tools';
-import BottomNav from './BottomNav';
 import FavorsTab from './FavorsTab';
 import FavorChannelsTab from './FavorChannelsTab';
+import FavorNetworkTab from './FavorNetworkTab';
+import BottomNav from './BottomNav';
 
 interface NostrEvent extends Event {
   created_at: number;
@@ -215,6 +216,8 @@ export default function NostrApp() {
         return <FavorsTab />;
       case 'favor-channels':
         return <FavorChannelsTab />;
+      case 'favor-network':
+        return <FavorNetworkTab />;
       case 'search':
         return (
           <div className="space-y-4 pb-20">
