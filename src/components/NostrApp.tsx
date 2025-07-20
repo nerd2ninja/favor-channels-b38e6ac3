@@ -772,7 +772,13 @@ export default function NostrApp() {
               Generate New Keys
             </Button>
             
-            <Dialog open={showNostrConnect} onOpenChange={setShowNostrConnect}>
+            <Dialog open={showNostrConnect} onOpenChange={(open) => {
+              if (open) {
+                initiateNostrConnect();
+              } else {
+                closeNostrConnect();
+              }
+            }}>
               <DialogTrigger asChild>
                 <Button 
                   className="w-full" 
