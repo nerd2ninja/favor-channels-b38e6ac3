@@ -169,21 +169,34 @@ export default function NostrApp() {
       nostrConnectUrl.searchParams.append('perms', 'sign_event:1,sign_event:0,get_public_key');
       
       const connectionString = nostrConnectUrl.toString();
-      
-      // Generate QR code
-      if (qrCanvasRef.current) {
-        await QRCode.toCanvas(qrCanvasRef.current, connectionString, {
-          width: 256,
-          margin: 2,
-          color: {
-            dark: '#000000',
-            light: '#ffffff'
-          }
-        });
-      }
-      
       setQrCodeUrl(connectionString);
-      setShowNostrConnect(true);
+      
+      // Generate QR code after a small delay to ensure canvas is rendered
+      setTimeout(async () => {
+        if (qrCanvasRef.current) {
+          try {
+            await QRCode.toCanvas(qrCanvasRef.current, connectionString, {
+              width: 256,
+              margin: 2,
+              color: {
+                dark: '#000000',
+                light: '#ffffff'
+              }
+            });
+            console.log('QR code generated successfully');
+          } catch (qrError) {
+            console.error('QR code generation error:', qrError);
+            toast({
+              title: "QR Generation Failed",
+              description: "Could not generate QR code, but you can copy the connection string",
+              variant: "destructive",
+            });
+          }
+        } else {
+          console.error('Canvas ref not available');
+        }
+      }, 100);
+      
       setIsAwaitingConnection(true);
       
       // Start listening for connection response
