@@ -151,6 +151,9 @@ export default function NostrApp() {
 
   const initiateNostrConnect = async () => {
     try {
+      // Set dialog to open first
+      setShowNostrConnect(true);
+      
       // Generate client keypair for this session
       const keypair = generateClientKeypair();
       setClientKeypair(keypair);
@@ -171,6 +174,8 @@ export default function NostrApp() {
       const connectionString = nostrConnectUrl.toString();
       setQrCodeUrl(connectionString);
       
+      console.log('Connection string generated:', connectionString);
+      
       // Generate QR code after a small delay to ensure canvas is rendered
       setTimeout(async () => {
         if (qrCanvasRef.current) {
@@ -183,7 +188,7 @@ export default function NostrApp() {
                 light: '#ffffff'
               }
             });
-            console.log('QR code generated successfully');
+            console.log('QR code generated successfully on canvas');
           } catch (qrError) {
             console.error('QR code generation error:', qrError);
             toast({
@@ -193,9 +198,9 @@ export default function NostrApp() {
             });
           }
         } else {
-          console.error('Canvas ref not available');
+          console.error('Canvas ref not available for QR generation');
         }
-      }, 100);
+      }, 200);
       
       setIsAwaitingConnection(true);
       
@@ -207,7 +212,7 @@ export default function NostrApp() {
         description: "Open Amber and scan the QR code to connect",
       });
     } catch (error) {
-      console.error('Failed to generate NOSTR Connect QR:', error);
+      console.error('Failed to generate NOSTR Connect setup:', error);
       toast({
         title: "Error",
         description: "Failed to generate connection QR code",
@@ -785,15 +790,10 @@ export default function NostrApp() {
               Generate New Keys
             </Button>
             
-            <Dialog open={showNostrConnect} onOpenChange={(open) => {
-              if (open) {
-                initiateNostrConnect();
-              } else {
-                closeNostrConnect();
-              }
-            }}>
+            <Dialog open={showNostrConnect} onOpenChange={setShowNostrConnect}>
               <DialogTrigger asChild>
                 <Button 
+                  onClick={initiateNostrConnect}
                   className="w-full" 
                   variant="outline"
                   size="lg"
