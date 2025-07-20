@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -7,8 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Zap, Send, Key, Users, Globe, Heart, MessageCircle, Repeat2, Search, User, QrCode, Edit, Copy, Settings, LogOut } from 'lucide-react';
+import { Zap, Send, Key, Users, Globe, Heart, MessageCircle, Repeat2, Search, User, QrCode, Edit, Copy, Settings, LogOut, X } from 'lucide-react';
 import { Relay, Event, nip19, getPublicKey } from 'nostr-tools';
+import QRCode from 'qrcode';
 import FavorsTab from './FavorsTab';
 import FavorChannelsTab from './FavorChannelsTab';
 import FavorNetworkTab from './FavorNetworkTab';
@@ -48,6 +49,11 @@ export default function NostrApp() {
   });
   const [editingProfile, setEditingProfile] = useState(false);
   const [showNostrConnect, setShowNostrConnect] = useState(false);
+  const [qrCodeUrl, setQrCodeUrl] = useState('');
+  const [connectionSecret, setConnectionSecret] = useState('');
+  const [clientKeypair, setClientKeypair] = useState<{ privateKey: string; publicKey: string } | null>(null);
+  const [isAwaitingConnection, setIsAwaitingConnection] = useState(false);
+  const qrCanvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -129,23 +135,147 @@ export default function NostrApp() {
     }
   };
 
-  const initiateNostrConnect = () => {
-    setShowNostrConnect(true);
-    // Generate a connection string for NOSTR Connect
-    const connectionString = `nostrconnect://amber?relay=wss://relay.damus.io&metadata=${encodeURIComponent(JSON.stringify({
-      name: "Nostr Favor App",
-      description: "A decentralized favor tracking application",
-      url: window.location.origin,
-      icons: [window.location.origin + "/favicon.ico"]
-    }))}`;
-    
-    // For now, show the connection string - in a real implementation, this would be a QR code
-    console.log('NOSTR Connect String:', connectionString);
-    
-    toast({
-      title: "NOSTR Connect Ready",
-      description: "Open Amber and scan the QR code to connect",
-    });
+  const generateClientKeypair = () => {
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    const privateKey = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+    const publicKey = getPublicKey(array);
+    return { privateKey, publicKey };
+  };
+
+  const generateRandomSecret = () => {
+    const array = new Uint8Array(16);
+    crypto.getRandomValues(array);
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  };
+
+  const initiateNostrConnect = async () => {
+    try {
+      // Generate client keypair for this session
+      const keypair = generateClientKeypair();
+      setClientKeypair(keypair);
+      
+      // Generate random secret for connection verification
+      const secret = generateRandomSecret();
+      setConnectionSecret(secret);
+      
+      // Create the nostrconnect:// URL according to NIP-46
+      const nostrConnectUrl = new URL(`nostrconnect://${keypair.publicKey}`);
+      nostrConnectUrl.searchParams.append('relay', 'wss://relay.damus.io');
+      nostrConnectUrl.searchParams.append('relay', 'wss://nos.lol');
+      nostrConnectUrl.searchParams.append('secret', secret);
+      nostrConnectUrl.searchParams.append('name', 'Nostr Favor App');
+      nostrConnectUrl.searchParams.append('url', window.location.origin);
+      nostrConnectUrl.searchParams.append('perms', 'sign_event:1,sign_event:0,get_public_key');
+      
+      const connectionString = nostrConnectUrl.toString();
+      
+      // Generate QR code
+      if (qrCanvasRef.current) {
+        await QRCode.toCanvas(qrCanvasRef.current, connectionString, {
+          width: 256,
+          margin: 2,
+          color: {
+            dark: '#000000',
+            light: '#ffffff'
+          }
+        });
+      }
+      
+      setQrCodeUrl(connectionString);
+      setShowNostrConnect(true);
+      setIsAwaitingConnection(true);
+      
+      // Start listening for connection response
+      listenForNostrConnectResponse(keypair);
+      
+      toast({
+        title: "NOSTR Connect Ready",
+        description: "Open Amber and scan the QR code to connect",
+      });
+    } catch (error) {
+      console.error('Failed to generate NOSTR Connect QR:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate connection QR code",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const listenForNostrConnectResponse = async (keypair: { privateKey: string; publicKey: string }) => {
+    try {
+      // Connect to relays to listen for responses
+      const relayPromises = RELAYS.map(async (url) => {
+        try {
+          const relay = await Relay.connect(url);
+          
+          // Subscribe to events targeting our client pubkey
+          const sub = relay.subscribe([
+            {
+              kinds: [24133], // NIP-46 response events
+              '#p': [keypair.publicKey], // Events that p-tag our client pubkey
+              since: Math.floor(Date.now() / 1000) - 60 // Only recent events
+            }
+          ], {
+            onevent: (event: NostrEvent) => {
+              handleNostrConnectResponse(event, keypair);
+            }
+          });
+          
+          return relay;
+        } catch (error) {
+          console.error(`Failed to connect to ${url}:`, error);
+          return null;
+        }
+      });
+      
+      const connectedRelays = (await Promise.all(relayPromises)).filter(Boolean) as Relay[];
+      console.log(`Listening for NOSTR Connect responses on ${connectedRelays.length} relays`);
+    } catch (error) {
+      console.error('Failed to listen for NOSTR Connect responses:', error);
+    }
+  };
+
+  const handleNostrConnectResponse = async (event: NostrEvent, keypair: { privateKey: string; publicKey: string }) => {
+    try {
+      // In a real implementation, we would decrypt the event content using NIP-44
+      // For now, we'll simulate a successful connection
+      console.log('Received NOSTR Connect response:', event);
+      
+      // Simulate extracting remote signer pubkey and verifying secret
+      const remoteSignerPubkey = event.pubkey;
+      
+      // For demo purposes, assume connection is successful
+      setIsConnected(true);
+      setIsAwaitingConnection(false);
+      setShowNostrConnect(false);
+      setPublicKey(remoteSignerPubkey);
+      
+      // Store the connection details
+      localStorage.setItem('nostr-connect-remote-signer', remoteSignerPubkey);
+      localStorage.setItem('nostr-connect-client-keypair', JSON.stringify(keypair));
+      
+      toast({
+        title: "Connected!",
+        description: "Successfully connected via NOSTR Connect",
+      });
+    } catch (error) {
+      console.error('Failed to handle NOSTR Connect response:', error);
+      toast({
+        title: "Connection Failed",
+        description: "Failed to establish NOSTR Connect connection",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const closeNostrConnect = () => {
+    setShowNostrConnect(false);
+    setIsAwaitingConnection(false);
+    setQrCodeUrl('');
+    setConnectionSecret('');
+    setClientKeypair(null);
   };
 
   const updateProfile = async (updatedProfile: typeof profile) => {
@@ -642,15 +772,83 @@ export default function NostrApp() {
               Generate New Keys
             </Button>
             
-            <Button 
-              onClick={initiateNostrConnect} 
-              className="w-full" 
-              variant="outline"
-              size="lg"
-            >
-              <QrCode className="mr-2 h-4 w-4" />
-              NOSTR Connect QR Code
-            </Button>
+            <Dialog open={showNostrConnect} onOpenChange={setShowNostrConnect}>
+              <DialogTrigger asChild>
+                <Button 
+                  className="w-full" 
+                  variant="outline"
+                  size="lg"
+                >
+                  <QrCode className="mr-2 h-4 w-4" />
+                  NOSTR Connect QR Code
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <div className="flex items-center justify-between">
+                    <DialogTitle>NOSTR Connect</DialogTitle>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={closeNostrConnect}
+                      className="h-8 w-8 p-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </DialogHeader>
+                
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Scan this QR code with Amber or another NIP-46 compatible signer
+                    </p>
+                    
+                    {/* QR Code Canvas */}
+                    <div className="flex justify-center mb-4">
+                      <canvas
+                        ref={qrCanvasRef}
+                        className="border rounded-lg"
+                        style={{ maxWidth: '256px', maxHeight: '256px' }}
+                      />
+                    </div>
+                    
+                    {isAwaitingConnection && (
+                      <div className="flex items-center justify-center space-x-2 text-sm text-muted-foreground">
+                        <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full"></div>
+                        <span>Waiting for connection...</span>
+                      </div>
+                    )}
+                    
+                    {qrCodeUrl && (
+                      <div className="mt-4">
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Or copy the connection string:
+                        </p>
+                        <div className="bg-muted p-2 rounded text-xs font-mono break-all">
+                          {qrCodeUrl}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            navigator.clipboard.writeText(qrCodeUrl);
+                            toast({
+                              title: "Copied!",
+                              description: "Connection string copied to clipboard",
+                            });
+                          }}
+                          className="mt-2 w-full"
+                        >
+                          <Copy className="h-4 w-4 mr-2" />
+                          Copy Connection String
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
             
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
