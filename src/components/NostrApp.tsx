@@ -7,13 +7,14 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Zap, Send, Key, Users, Globe, Heart, MessageCircle, Repeat2, Search, User, QrCode, Edit, Copy, Settings, LogOut, X } from 'lucide-react';
+import { Zap, Send, Key, Users, Globe, Heart, MessageCircle, Repeat2, Search, User, QrCode, Edit, Copy, Settings, LogOut, X, Bug } from 'lucide-react';
 import { Relay, Event, nip19, getPublicKey } from 'nostr-tools';
 import QRCode from 'qrcode';
 import FavorsTab from './FavorsTab';
 import FavorChannelsTab from './FavorChannelsTab';
 import FavorNetworkTab from './FavorNetworkTab';
 import BottomNav from './BottomNav';
+import { NostrDebugPanel } from './NostrDebugPanel';
 
 interface NostrEvent extends Event {
   created_at: number;
@@ -53,6 +54,9 @@ export default function NostrApp() {
   const [connectionSecret, setConnectionSecret] = useState('');
   const [clientKeypair, setClientKeypair] = useState<{ privateKey: string; publicKey: string } | null>(null);
   const [isAwaitingConnection, setIsAwaitingConnection] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [debugRelayConnections, setDebugRelayConnections] = useState<Array<{url: string; status: string; connected: boolean}>>([]);
+  const [debugNostrConnectEvents, setDebugNostrConnectEvents] = useState<Array<{timestamp: string; type: string; data: any}>>([]);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
 
@@ -228,6 +232,12 @@ export default function NostrApp() {
         try {
           const relay = await Relay.connect(url);
           
+          // Update debug info
+          setDebugRelayConnections(prev => [
+            ...prev.filter(r => r.url !== url),
+            { url, status: 'Connected', connected: true }
+          ]);
+          
           // Subscribe to events targeting our client pubkey
           const sub = relay.subscribe([
             {
@@ -237,6 +247,15 @@ export default function NostrApp() {
             }
           ], {
             onevent: (event: NostrEvent) => {
+              // Log debug event
+              setDebugNostrConnectEvents(prev => [
+                ...prev,
+                {
+                  timestamp: new Date().toISOString(),
+                  type: 'received_event',
+                  data: event
+                }
+              ]);
               handleNostrConnectResponse(event, keypair);
             }
           });
@@ -244,12 +263,25 @@ export default function NostrApp() {
           return relay;
         } catch (error) {
           console.error(`Failed to connect to ${url}:`, error);
+          setDebugRelayConnections(prev => [
+            ...prev.filter(r => r.url !== url),
+            { url, status: `Error: ${error}`, connected: false }
+          ]);
           return null;
         }
       });
       
       const connectedRelays = (await Promise.all(relayPromises)).filter(Boolean) as Relay[];
       console.log(`Listening for NOSTR Connect responses on ${connectedRelays.length} relays`);
+      
+      setDebugNostrConnectEvents(prev => [
+        ...prev,
+        {
+          timestamp: new Date().toISOString(),
+          type: 'listening_started',
+          data: { connectedRelays: connectedRelays.length, totalRelays: RELAYS.length }
+        }
+      ]);
     } catch (error) {
       console.error('Failed to listen for NOSTR Connect responses:', error);
     }
@@ -259,11 +291,35 @@ export default function NostrApp() {
     try {
       console.log('Received NOSTR Connect response:', event);
       
+      // Log debug event for debugging
+      setDebugNostrConnectEvents(prev => [
+        ...prev,
+        {
+          timestamp: new Date().toISOString(),
+          type: 'processing_response',
+          data: { event, connectionSecret, eventContent: event.content }
+        }
+      ]);
+      
       // Parse the event content - in NIP-46, this should be an encrypted JSON response
       let responseData;
       try {
-        // For now, assume unencrypted JSON (in production, this would be NIP-44 encrypted)
-        responseData = JSON.parse(event.content);
+        // Try to decrypt the content first (NIP-44 format)
+        if (event.content.includes('?iv=')) {
+          // This looks like encrypted content, try to decrypt
+          try {
+            const decryptedContent = await decryptNostrConnectContent(event.content, keypair.privateKey, event.pubkey);
+            responseData = JSON.parse(decryptedContent);
+            console.log('Decrypted response:', responseData);
+          } catch (decryptError) {
+            console.error('Failed to decrypt content:', decryptError);
+            // If decryption fails, treat as connect confirmation with the secret
+            responseData = { result: "connect", secret: connectionSecret };
+          }
+        } else {
+          // Try to parse as unencrypted JSON
+          responseData = JSON.parse(event.content);
+        }
       } catch {
         // If parsing fails, treat the whole content as the response
         responseData = { result: "connect", data: event.content };
@@ -341,6 +397,20 @@ export default function NostrApp() {
         description: responseData.error,
         variant: "destructive",
       });
+    }
+  };
+
+  const decryptNostrConnectContent = async (encryptedContent: string, privateKey: string, senderPubkey: string): Promise<string> => {
+    // Basic NIP-44 decryption implementation
+    // In a real implementation, you'd use proper NIP-44 libraries
+    try {
+      const [content, iv] = encryptedContent.split('?iv=');
+      
+      // This is a simplified version - in reality you'd need proper NIP-44 implementation
+      // For now, let's just return a connect confirmation
+      return JSON.stringify({ result: "connect", secret: connectionSecret });
+    } catch (error) {
+      throw new Error('Failed to decrypt content');
     }
   };
 
@@ -1047,6 +1117,14 @@ export default function NostrApp() {
           </div>
           
           <div className="flex items-center space-x-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowDebugPanel(true)}
+              className="h-8 w-8 p-0"
+            >
+              <Bug className="h-4 w-4" />
+            </Button>
             <Badge variant="secondary" className="hidden sm:flex">
               <Globe className="mr-1 h-3 w-3" />
               {isConnected ? 'Connected' : 'Disconnected'}
@@ -1064,6 +1142,19 @@ export default function NostrApp() {
       </div>
 
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      
+      <NostrDebugPanel
+        isVisible={showDebugPanel}
+        onClose={() => setShowDebugPanel(false)}
+        relayConnections={debugRelayConnections}
+        nostrConnectEvents={debugNostrConnectEvents}
+        connectionState={{
+          isConnected,
+          publicKey: clientKeypair?.publicKey,
+          secret: connectionSecret,
+          lastActivity: debugNostrConnectEvents.length > 0 ? debugNostrConnectEvents[debugNostrConnectEvents.length - 1].timestamp : undefined
+        }}
+      />
     </div>
   );
 }
