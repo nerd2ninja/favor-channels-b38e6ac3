@@ -973,7 +973,17 @@ export default function NostrApp() {
 
   if (!privateKey) {
     return (
-      <div className="min-h-screen bg-gradient-subtle flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-subtle flex items-center justify-center p-4 relative">
+        {/* Debug button for login screen */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowDebugPanel(true)}
+          className="absolute top-4 right-4 h-8 w-8 p-0"
+        >
+          <Bug className="h-4 w-4" />
+        </Button>
+        
         <Card className="w-full max-w-md shadow-elegant">
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
@@ -1098,6 +1108,19 @@ export default function NostrApp() {
             </div>
           </CardContent>
         </Card>
+        
+        <NostrDebugPanel
+          isVisible={showDebugPanel}
+          onClose={() => setShowDebugPanel(false)}
+          relayConnections={debugRelayConnections}
+          nostrConnectEvents={debugNostrConnectEvents}
+          connectionState={{
+            isConnected,
+            publicKey: clientKeypair?.publicKey,
+            secret: connectionSecret,
+            lastActivity: debugNostrConnectEvents.length > 0 ? debugNostrConnectEvents[debugNostrConnectEvents.length - 1].timestamp : undefined
+          }}
+        />
       </div>
     );
   }
