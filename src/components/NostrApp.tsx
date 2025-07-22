@@ -257,32 +257,88 @@ export default function NostrApp() {
 
   const handleNostrConnectResponse = async (event: NostrEvent, keypair: { privateKey: string; publicKey: string }) => {
     try {
-      // In a real implementation, we would decrypt the event content using NIP-44
-      // For now, we'll simulate a successful connection
       console.log('Received NOSTR Connect response:', event);
       
-      // Simulate extracting remote signer pubkey and verifying secret
-      const remoteSignerPubkey = event.pubkey;
+      // Parse the event content - in NIP-46, this should be an encrypted JSON response
+      let responseData;
+      try {
+        // For now, assume unencrypted JSON (in production, this would be NIP-44 encrypted)
+        responseData = JSON.parse(event.content);
+      } catch {
+        // If parsing fails, treat the whole content as the response
+        responseData = { result: "connect", data: event.content };
+      }
       
-      // For demo purposes, assume connection is successful
-      setIsConnected(true);
-      setIsAwaitingConnection(false);
-      setShowNostrConnect(false);
-      setPublicKey(remoteSignerPubkey);
-      
-      // Store the connection details
-      localStorage.setItem('nostr-connect-remote-signer', remoteSignerPubkey);
-      localStorage.setItem('nostr-connect-client-keypair', JSON.stringify(keypair));
-      
-      toast({
-        title: "Connected!",
-        description: "Successfully connected via NOSTR Connect",
-      });
+      // Check if this is a "connect" response with our secret
+      if (responseData.result === "connect" && connectionSecret) {
+        // Verify the connection secret matches
+        if (responseData.secret === connectionSecret || responseData.data === connectionSecret) {
+          // Connection successful
+          const remoteSignerPubkey = event.pubkey;
+          
+          setIsConnected(true);
+          setIsAwaitingConnection(false);
+          setShowNostrConnect(false);
+          setPublicKey(remoteSignerPubkey);
+          
+          // Store the connection details for future signing requests
+          localStorage.setItem('nostr-connect-remote-signer', remoteSignerPubkey);
+          localStorage.setItem('nostr-connect-client-keypair', JSON.stringify(keypair));
+          localStorage.setItem('nostr-connect-secret', connectionSecret);
+          
+          toast({
+            title: "Connected!",
+            description: "Successfully connected via NOSTR Connect",
+          });
+          
+          // Now we can make signing requests to the remote signer
+          subscribeToFeed();
+        } else {
+          console.log('Connection secret mismatch');
+        }
+      } else if (responseData.result && responseData.id) {
+        // Handle other NIP-46 responses (sign_event, get_public_key, etc.)
+        handleSigningResponse(responseData);
+      }
     } catch (error) {
       console.error('Failed to handle NOSTR Connect response:', error);
       toast({
-        title: "Connection Failed",
+        title: "Connection Failed", 
         description: "Failed to establish NOSTR Connect connection",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSigningResponse = (responseData: any) => {
+    // Handle responses to signing requests
+    console.log('Received signing response:', responseData);
+    
+    if (responseData.result === "sign_event" && responseData.result_data) {
+      // Event was signed successfully
+      const signedEvent = responseData.result_data;
+      console.log('Event signed:', signedEvent);
+      
+      // Add the signed event to our local events or publish it
+      if (signedEvent.kind === 1) {
+        setEvents(prev => {
+          const newEvents = [signedEvent, ...prev];
+          return newEvents.sort((a, b) => b.created_at - a.created_at);
+        });
+      }
+      
+      toast({
+        title: "Event Signed",
+        description: "Event was signed successfully by remote signer",
+      });
+    } else if (responseData.result === "get_public_key" && responseData.result_data) {
+      // Got public key from signer
+      setPublicKey(responseData.result_data);
+    } else if (responseData.error) {
+      // Handle error responses
+      toast({
+        title: "Signing Error",
+        description: responseData.error,
         variant: "destructive",
       });
     }
@@ -410,7 +466,7 @@ export default function NostrApp() {
   };
 
   const publishNote = async () => {
-    if (!privateKey || !newNote.trim() || relays.length === 0) return;
+    if (!newNote.trim()) return;
 
     try {
       // Create event object
@@ -422,27 +478,109 @@ export default function NostrApp() {
         pubkey: publicKey,
       };
 
-      // Simple event signing (basic implementation)
-      const eventJson = JSON.stringify([0, event.pubkey, event.created_at, event.kind, event.tags, event.content]);
-      const eventHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(eventJson));
-      const eventId = Array.from(new Uint8Array(eventHash), b => b.toString(16).padStart(2, '0')).join('');
+      // Check if we're using NOSTR Connect
+      const remoteSignerPubkey = localStorage.getItem('nostr-connect-remote-signer');
+      const clientKeypairStr = localStorage.getItem('nostr-connect-client-keypair');
       
-      const finalEvent = { ...event, id: eventId, sig: 'placeholder' } as NostrEvent;
+      if (remoteSignerPubkey && clientKeypairStr) {
+        // Use NOSTR Connect to sign the event
+        await requestEventSigning(event);
+      } else if (privateKey && relays.length > 0) {
+        // Use direct signing with private key
+        const eventJson = JSON.stringify([0, event.pubkey, event.created_at, event.kind, event.tags, event.content]);
+        const eventHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(eventJson));
+        const eventId = Array.from(new Uint8Array(eventHash), b => b.toString(16).padStart(2, '0')).join('');
+        
+        const finalEvent = { ...event, id: eventId, sig: 'placeholder' } as NostrEvent;
 
-      // Publish to connected relays
-      const publishPromises = relays.map(relay => relay.publish(finalEvent));
-      await Promise.allSettled(publishPromises);
+        // Publish to connected relays
+        const publishPromises = relays.map(relay => relay.publish(finalEvent));
+        await Promise.allSettled(publishPromises);
+        
+        setNewNote('');
+        toast({
+          title: "Note Published",
+          description: "Your note has been published to Nostr",
+        });
+      } else {
+        toast({
+          title: "No Connection",
+          description: "Please connect with keys or NOSTR Connect first",
+          variant: "destructive",
+        });
+        return;
+      }
       
       setNewNote('');
-      toast({
-        title: "Note Published",
-        description: "Your note has been published to Nostr",
-      });
     } catch (error) {
       console.error('Publish error:', error);
       toast({
         title: "Publish Failed",
         description: "Failed to publish note",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const requestEventSigning = async (event: any) => {
+    try {
+      const clientKeypairStr = localStorage.getItem('nostr-connect-client-keypair');
+      const remoteSignerPubkey = localStorage.getItem('nostr-connect-remote-signer');
+      
+      if (!clientKeypairStr || !remoteSignerPubkey) {
+        throw new Error('NOSTR Connect not properly initialized');
+      }
+      
+      const clientKeypair = JSON.parse(clientKeypairStr);
+      
+      // Create a signing request according to NIP-46
+      const requestId = crypto.randomUUID();
+      const signingRequest = {
+        id: requestId,
+        method: "sign_event",
+        params: [event]
+      };
+      
+      // Create the request event
+      const requestEvent = {
+        kind: 24133, // NIP-46 request kind
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['p', remoteSignerPubkey], // Target the remote signer
+        ],
+        content: JSON.stringify(signingRequest), // In production, this should be NIP-44 encrypted
+        pubkey: clientKeypair.publicKey,
+      };
+      
+      // Sign the request event with client key (simplified)
+      const eventJson = JSON.stringify([0, requestEvent.pubkey, requestEvent.created_at, requestEvent.kind, requestEvent.tags, requestEvent.content]);
+      const eventHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(eventJson));
+      const eventId = Array.from(new Uint8Array(eventHash), b => b.toString(16).padStart(2, '0')).join('');
+      
+      const finalRequestEvent = { ...requestEvent, id: eventId, sig: 'placeholder' } as NostrEvent;
+      
+      // Send the signing request to relays
+      const publishPromises = RELAYS.map(async (url) => {
+        try {
+          const relay = await Relay.connect(url);
+          await relay.publish(finalRequestEvent);
+          console.log(`Sent signing request to ${url}`);
+        } catch (error) {
+          console.error(`Failed to send request to ${url}:`, error);
+        }
+      });
+      
+      await Promise.allSettled(publishPromises);
+      
+      toast({
+        title: "Signing Request Sent",
+        description: "Please approve the signing request in your signer app",
+      });
+    } catch (error) {
+      console.error('Failed to request event signing:', error);
+      toast({
+        title: "Signing Request Failed",
+        description: "Failed to send signing request",
         variant: "destructive",
       });
     }
