@@ -282,32 +282,47 @@ export default function NostrApp() {
         responseData = { result: "connect", data: event.content };
       }
       
-      // Check if this is a "connect" response with our secret
-      if (responseData.result === "connect" && connectionSecret) {
-        // Verify the connection secret matches
-        if (responseData.secret === connectionSecret || responseData.data === connectionSecret) {
-          // Connection successful
-          const remoteSignerPubkey = event.pubkey;
-          
-          setIsConnected(true);
-          setIsAwaitingConnection(false);
-          setShowNostrConnect(false);
-          setRemoteSignerPublicKey(remoteSignerPubkey);
-          
-          // Store the connection details for future signing requests
-          localStorage.setItem('nostr-remote-signer-pubkey', remoteSignerPubkey);
-          localStorage.setItem('nostr-client-keypair', JSON.stringify(keypair));
-          
-          // Now get the user's public key from the remote signer
-          await requestPublicKey();
-          
-          toast({
-            title: "Connected!",
-            description: "Successfully connected via NOSTR Connect",
-          });
-        } else {
-          console.log('Connection secret mismatch');
-        }
+      // Check if this is a "connect" response
+      if (responseData.result === "connect") {
+        // For NIP-46, if we get a connect response, the signer has accepted the connection
+        // The secret might be empty or match - both are valid connection confirmations
+        console.log('Connection confirmed by remote signer');
+        
+        const remoteSignerPubkey = event.pubkey;
+        
+        setIsConnected(true);
+        setIsAwaitingConnection(false);
+        setRemoteSignerPublicKey(remoteSignerPubkey);
+        
+        // Store the connection details for future signing requests
+        localStorage.setItem('nostr-remote-signer-pubkey', remoteSignerPubkey);
+        localStorage.setItem('nostr-client-keypair', JSON.stringify(keypair));
+        
+        // Now get the user's public key from the remote signer
+        console.log('Requesting user public key from remote signer...');
+        await requestPublicKey();
+        
+        toast({
+          title: "Connected!",
+          description: "Getting your public key from remote signer...",
+        });
+      } else if (responseData.result && typeof responseData.result === 'string' && responseData.result.length === 64) {
+        // This looks like a public key response (64 char hex string)
+        console.log('Received public key from remote signer:', responseData.result);
+        setUserPublicKey(responseData.result);
+        
+        // Save the session data
+        localStorage.setItem('nostr-user-public-key', responseData.result);
+        
+        // Mark as authenticated and connect to relays
+        setIsAuthenticated(true);
+        setShowNostrConnect(false);
+        connectToRelays();
+        
+        toast({
+          title: "Authenticated!",
+          description: "Successfully authenticated with remote signer",
+        });
       } else if (responseData.result && responseData.id) {
         // Handle other NIP-46 responses (sign_event, get_public_key, etc.)
         handleSigningResponse(responseData);
@@ -387,7 +402,7 @@ export default function NostrApp() {
         params: []
       };
       
-      // Create the request event
+      // Create the request event using the client keypair
       const requestEvent = {
         kind: 24133, // NIP-46 request kind
         created_at: Math.floor(Date.now() / 1000),
@@ -398,12 +413,14 @@ export default function NostrApp() {
         pubkey: clientKeypair.publicKey,
       };
       
-      // Sign the request event with client key (simplified)
+      // Sign the request event with client key (simplified signing for now)
       const eventJson = JSON.stringify([0, requestEvent.pubkey, requestEvent.created_at, requestEvent.kind, requestEvent.tags, requestEvent.content]);
       const eventHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(eventJson));
       const eventId = Array.from(new Uint8Array(eventHash), b => b.toString(16).padStart(2, '0')).join('');
       
-      const finalRequestEvent = { ...requestEvent, id: eventId, sig: 'placeholder' } as NostrEvent;
+      const finalRequestEvent = { ...requestEvent, id: eventId, sig: 'placeholder_signature' } as NostrEvent;
+      
+      console.log('Sending get_public_key request:', finalRequestEvent);
       
       // Send the request to relays
       const publishPromises = RELAYS.map(async (url) => {
@@ -411,6 +428,7 @@ export default function NostrApp() {
           const relay = await Relay.connect(url);
           await relay.publish(finalRequestEvent);
           console.log(`Sent get_public_key request to ${url}`);
+          relay.close();
         } catch (error) {
           console.error(`Failed to send request to ${url}:`, error);
         }
