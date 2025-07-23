@@ -34,8 +34,7 @@ const RELAYS = [
 
 export default function NostrApp() {
   const [relays, setRelays] = useState<Relay[]>([]);
-  const [privateKey, setPrivateKey] = useState<string>('');
-  const [publicKey, setPublicKey] = useState<string>('');
+  const [userPublicKey, setUserPublicKey] = useState<string>(''); // The actual user's public key from remote signer
   const [isConnected, setIsConnected] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
   const [newNote, setNewNote] = useState('');
@@ -53,7 +52,9 @@ export default function NostrApp() {
   const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [connectionSecret, setConnectionSecret] = useState('');
   const [clientKeypair, setClientKeypair] = useState<{ privateKey: string; publicKey: string } | null>(null);
+  const [remoteSignerPublicKey, setRemoteSignerPublicKey] = useState<string>('');
   const [isAwaitingConnection, setIsAwaitingConnection] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [debugRelayConnections, setDebugRelayConnections] = useState<Array<{url: string; status: string; connected: boolean}>>([]);
   const [debugNostrConnectEvents, setDebugNostrConnectEvents] = useState<Array<{timestamp: string; type: string; data: any}>>([]);
@@ -61,13 +62,16 @@ export default function NostrApp() {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Load saved keys from localStorage
-    const savedPrivateKey = localStorage.getItem('nostr-private-key');
-    if (savedPrivateKey) {
-      setPrivateKey(savedPrivateKey);
-      const hexBytes = new Uint8Array(savedPrivateKey.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
-      const pubKey = getPublicKey(hexBytes);
-      setPublicKey(pubKey);
+    // Check for existing NIP-46 session
+    const savedUserPublicKey = localStorage.getItem('nostr-user-public-key');
+    const savedClientKeypair = localStorage.getItem('nostr-client-keypair');
+    const savedRemoteSignerPubkey = localStorage.getItem('nostr-remote-signer-pubkey');
+    
+    if (savedUserPublicKey && savedClientKeypair && savedRemoteSignerPubkey) {
+      setUserPublicKey(savedUserPublicKey);
+      setClientKeypair(JSON.parse(savedClientKeypair));
+      setRemoteSignerPublicKey(savedRemoteSignerPubkey);
+      setIsAuthenticated(true);
       connectToRelays();
     }
   }, []);
@@ -90,54 +94,7 @@ export default function NostrApp() {
     }
   };
 
-  const generateKeys = () => {
-    // Generate a random 32-byte private key
-    const array = new Uint8Array(32);
-    crypto.getRandomValues(array);
-    const newPrivateKey = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-    const newPublicKey = getPublicKey(array);
-    
-    setPrivateKey(newPrivateKey);
-    setPublicKey(newPublicKey);
-    
-    localStorage.setItem('nostr-private-key', newPrivateKey);
-    
-    toast({
-      title: "Keys Generated",
-      description: "New Nostr keys created and saved locally",
-    });
-  };
-
-  const importKey = (key: string) => {
-    try {
-      let privateKeyToUse = key;
-      
-      // Handle nsec format
-      if (key.startsWith('nsec')) {
-        const decoded = nip19.decode(key);
-        privateKeyToUse = decoded.data as string;
-      }
-      
-      const hexBytes = new Uint8Array(privateKeyToUse.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
-      const pubKey = getPublicKey(hexBytes);
-      setPrivateKey(privateKeyToUse);
-      setPublicKey(pubKey);
-      
-      localStorage.setItem('nostr-private-key', privateKeyToUse);
-      connectToRelays();
-      
-      toast({
-        title: "Key Imported",
-        description: "Private key imported successfully",
-      });
-    } catch (error) {
-      toast({
-        title: "Import Failed",
-        description: "Invalid private key format",
-        variant: "destructive",
-      });
-    }
-  };
+  // Remove the old key generation functions as we're using NIP-46 remote signing only
 
   const generateClientKeypair = () => {
     const array = new Uint8Array(32);
@@ -335,20 +292,19 @@ export default function NostrApp() {
           setIsConnected(true);
           setIsAwaitingConnection(false);
           setShowNostrConnect(false);
-          setPublicKey(remoteSignerPubkey);
+          setRemoteSignerPublicKey(remoteSignerPubkey);
           
           // Store the connection details for future signing requests
-          localStorage.setItem('nostr-connect-remote-signer', remoteSignerPubkey);
-          localStorage.setItem('nostr-connect-client-keypair', JSON.stringify(keypair));
-          localStorage.setItem('nostr-connect-secret', connectionSecret);
+          localStorage.setItem('nostr-remote-signer-pubkey', remoteSignerPubkey);
+          localStorage.setItem('nostr-client-keypair', JSON.stringify(keypair));
+          
+          // Now get the user's public key from the remote signer
+          await requestPublicKey();
           
           toast({
             title: "Connected!",
             description: "Successfully connected via NOSTR Connect",
           });
-          
-          // Now we can make signing requests to the remote signer
-          subscribeToFeed();
         } else {
           console.log('Connection secret mismatch');
         }
@@ -389,12 +345,85 @@ export default function NostrApp() {
       });
     } else if (responseData.result === "get_public_key" && responseData.result_data) {
       // Got public key from signer
-      setPublicKey(responseData.result_data);
+      setUserPublicKey(responseData.result_data);
+      
+      // Save the session data
+      localStorage.setItem('nostr-user-public-key', responseData.result_data);
+      
+      // Mark as authenticated and connect to relays
+      setIsAuthenticated(true);
+      connectToRelays();
+      
+      toast({
+        title: "Authenticated!",
+        description: "Successfully authenticated with remote signer",
+      });
     } else if (responseData.error) {
       // Handle error responses
       toast({
         title: "Signing Error",
         description: responseData.error,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const requestPublicKey = async () => {
+    try {
+      const clientKeypairStr = localStorage.getItem('nostr-client-keypair');
+      const remoteSignerPubkey = localStorage.getItem('nostr-remote-signer-pubkey');
+      
+      if (!clientKeypairStr || !remoteSignerPubkey) {
+        throw new Error('NOSTR Connect not properly initialized');
+      }
+      
+      const clientKeypair = JSON.parse(clientKeypairStr);
+      
+      // Create a get_public_key request according to NIP-46
+      const requestId = crypto.randomUUID();
+      const publicKeyRequest = {
+        id: requestId,
+        method: "get_public_key",
+        params: []
+      };
+      
+      // Create the request event
+      const requestEvent = {
+        kind: 24133, // NIP-46 request kind
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['p', remoteSignerPubkey], // Target the remote signer
+        ],
+        content: JSON.stringify(publicKeyRequest), // In production, this should be NIP-44 encrypted
+        pubkey: clientKeypair.publicKey,
+      };
+      
+      // Sign the request event with client key (simplified)
+      const eventJson = JSON.stringify([0, requestEvent.pubkey, requestEvent.created_at, requestEvent.kind, requestEvent.tags, requestEvent.content]);
+      const eventHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(eventJson));
+      const eventId = Array.from(new Uint8Array(eventHash), b => b.toString(16).padStart(2, '0')).join('');
+      
+      const finalRequestEvent = { ...requestEvent, id: eventId, sig: 'placeholder' } as NostrEvent;
+      
+      // Send the request to relays
+      const publishPromises = RELAYS.map(async (url) => {
+        try {
+          const relay = await Relay.connect(url);
+          await relay.publish(finalRequestEvent);
+          console.log(`Sent get_public_key request to ${url}`);
+        } catch (error) {
+          console.error(`Failed to send request to ${url}:`, error);
+        }
+      });
+      
+      await Promise.allSettled(publishPromises);
+      
+      console.log('Public key request sent to remote signer');
+    } catch (error) {
+      console.error('Failed to request public key:', error);
+      toast({
+        title: "Authentication Failed",
+        description: "Failed to get public key from remote signer",
         variant: "destructive",
       });
     }
@@ -423,7 +452,7 @@ export default function NostrApp() {
   };
 
   const updateProfile = async (updatedProfile: typeof profile) => {
-    if (!privateKey || relays.length === 0) return;
+    if (!isAuthenticated || relays.length === 0) return;
 
     try {
       // Create a kind 0 event for profile metadata
@@ -439,32 +468,24 @@ export default function NostrApp() {
           website: updatedProfile.website,
           nip05: updatedProfile.nip05
         }),
-        pubkey: publicKey,
+        pubkey: userPublicKey,
       };
 
-      // Simple event signing (basic implementation)
-      const eventJson = JSON.stringify([0, profileEvent.pubkey, profileEvent.created_at, profileEvent.kind, profileEvent.tags, profileEvent.content]);
-      const eventHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(eventJson));
-      const eventId = Array.from(new Uint8Array(eventHash), b => b.toString(16).padStart(2, '0')).join('');
-      
-      const finalEvent = { ...profileEvent, id: eventId, sig: 'placeholder' } as NostrEvent;
-
-      // Publish to connected relays
-      const publishPromises = relays.map(relay => relay.publish(finalEvent));
-      await Promise.allSettled(publishPromises);
+      // Use NIP-46 to sign the profile event
+      await requestEventSigning(profileEvent);
       
       setProfile(updatedProfile);
       setEditingProfile(false);
       
       toast({
-        title: "Profile Updated",
-        description: "Your profile has been updated on Nostr",
+        title: "Profile Update Requested",
+        description: "Please approve the profile update in your signer app",
       });
     } catch (error) {
       console.error('Profile update error:', error);
       toast({
         title: "Update Failed",
-        description: "Failed to update profile",
+        description: "Failed to request profile update",
         variant: "destructive",
       });
     }
@@ -479,9 +500,15 @@ export default function NostrApp() {
   };
 
   const logOut = () => {
-    localStorage.removeItem('nostr-private-key');
-    setPrivateKey('');
-    setPublicKey('');
+    // Clear NIP-46 session data
+    localStorage.removeItem('nostr-user-public-key');
+    localStorage.removeItem('nostr-client-keypair');
+    localStorage.removeItem('nostr-remote-signer-pubkey');
+    
+    setUserPublicKey('');
+    setRemoteSignerPublicKey('');
+    setClientKeypair(null);
+    setIsAuthenticated(false);
     setIsConnected(false);
     setProfile({ name: '', about: '', picture: '', banner: '', website: '', nip05: '' });
     setRelays([]);
@@ -545,37 +572,20 @@ export default function NostrApp() {
         created_at: Math.floor(Date.now() / 1000),
         tags: [],
         content: newNote,
-        pubkey: publicKey,
+        pubkey: userPublicKey,
       };
 
       // Check if we're using NOSTR Connect
-      const remoteSignerPubkey = localStorage.getItem('nostr-connect-remote-signer');
-      const clientKeypairStr = localStorage.getItem('nostr-connect-client-keypair');
+      const remoteSignerPubkey = localStorage.getItem('nostr-remote-signer-pubkey');
+      const clientKeypairStr = localStorage.getItem('nostr-client-keypair');
       
-      if (remoteSignerPubkey && clientKeypairStr) {
+      if (isAuthenticated && remoteSignerPubkey && clientKeypairStr) {
         // Use NOSTR Connect to sign the event
         await requestEventSigning(event);
-      } else if (privateKey && relays.length > 0) {
-        // Use direct signing with private key
-        const eventJson = JSON.stringify([0, event.pubkey, event.created_at, event.kind, event.tags, event.content]);
-        const eventHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(eventJson));
-        const eventId = Array.from(new Uint8Array(eventHash), b => b.toString(16).padStart(2, '0')).join('');
-        
-        const finalEvent = { ...event, id: eventId, sig: 'placeholder' } as NostrEvent;
-
-        // Publish to connected relays
-        const publishPromises = relays.map(relay => relay.publish(finalEvent));
-        await Promise.allSettled(publishPromises);
-        
-        setNewNote('');
-        toast({
-          title: "Note Published",
-          description: "Your note has been published to Nostr",
-        });
       } else {
         toast({
-          title: "No Connection",
-          description: "Please connect with keys or NOSTR Connect first",
+          title: "Not Authenticated",
+          description: "Please connect with NOSTR Connect first",
           variant: "destructive",
         });
         return;
@@ -594,8 +604,8 @@ export default function NostrApp() {
 
   const requestEventSigning = async (event: any) => {
     try {
-      const clientKeypairStr = localStorage.getItem('nostr-connect-client-keypair');
-      const remoteSignerPubkey = localStorage.getItem('nostr-connect-remote-signer');
+      const clientKeypairStr = localStorage.getItem('nostr-client-keypair');
+      const remoteSignerPubkey = localStorage.getItem('nostr-remote-signer-pubkey');
       
       if (!clientKeypairStr || !remoteSignerPubkey) {
         throw new Error('NOSTR Connect not properly initialized');
@@ -718,9 +728,9 @@ export default function NostrApp() {
                         {profile.picture ? (
                           <img src={profile.picture} alt="Profile" className="w-full h-full object-cover" />
                         ) : (
-                          <AvatarFallback className="bg-gradient-primary text-white text-xl font-bold">
-                            {profile.name ? profile.name.slice(0, 2).toUpperCase() : publicKey.slice(0, 2).toUpperCase()}
-                          </AvatarFallback>
+                           <AvatarFallback className="bg-gradient-primary text-white text-xl font-bold">
+                            {profile.name ? profile.name.slice(0, 2).toUpperCase() : userPublicKey.slice(0, 2).toUpperCase()}
+                           </AvatarFallback>
                         )}
                       </Avatar>
                       
@@ -818,12 +828,12 @@ export default function NostrApp() {
                   <label className="text-sm font-medium text-muted-foreground">Public Key (npub)</label>
                   <div className="flex items-center space-x-2 mt-1">
                     <Badge variant="outline" className="font-mono text-xs flex-1 justify-start">
-                      {nip19.npubEncode(publicKey)}
+                      {nip19.npubEncode(userPublicKey)}
                     </Badge>
                     <Button 
                       size="sm" 
                       variant="ghost"
-                      onClick={() => copyToClipboard(nip19.npubEncode(publicKey), 'Public key')}
+                      onClick={() => copyToClipboard(nip19.npubEncode(userPublicKey), 'Public key')}
                     >
                       <Copy className="h-4 w-4" />
                     </Button>
@@ -834,12 +844,12 @@ export default function NostrApp() {
                   <label className="text-sm font-medium text-muted-foreground">Hex Public Key</label>
                   <div className="flex items-center space-x-2 mt-1">
                     <Badge variant="outline" className="font-mono text-xs flex-1 justify-start">
-                      {shortenPubkey(publicKey)}
+                      {shortenPubkey(userPublicKey)}
                     </Badge>
                     <Button 
                       size="sm" 
                       variant="ghost"
-                      onClick={() => copyToClipboard(publicKey, 'Hex public key')}
+                      onClick={() => copyToClipboard(userPublicKey, 'Hex public key')}
                     >
                       <Copy className="h-4 w-4" />
                     </Button>
@@ -971,7 +981,7 @@ export default function NostrApp() {
     }
   };
 
-  if (!privateKey) {
+  if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gradient-subtle flex items-center justify-center p-4 relative">
         {/* Debug button for login screen */}
@@ -999,14 +1009,11 @@ export default function NostrApp() {
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button 
-              onClick={generateKeys} 
-              className="w-full bg-gradient-primary hover:opacity-90 transition-opacity"
-              size="lg"
-            >
-              <Key className="mr-2 h-4 w-4" />
-              Generate New Keys
-            </Button>
+            <div className="text-center mb-6">
+              <p className="text-sm text-muted-foreground">
+                Connect using NIP-46 remote signing for secure key management
+              </p>
+            </div>
             
             <Dialog open={showNostrConnect} onOpenChange={setShowNostrConnect}>
               <DialogTrigger asChild>
@@ -1086,26 +1093,6 @@ export default function NostrApp() {
                 </div>
               </DialogContent>
             </Dialog>
-            
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">Or</span>
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <Input
-                placeholder="Import private key (nsec... or hex)"
-                onChange={(e) => {
-                  if (e.target.value.length > 0) {
-                    importKey(e.target.value);
-                  }
-                }}
-              />
-            </div>
           </CardContent>
         </Card>
         
@@ -1154,7 +1141,7 @@ export default function NostrApp() {
             </Badge>
             <Badge variant="outline">
               <Users className="mr-1 h-3 w-3" />
-              {shortenPubkey(publicKey)}
+              {shortenPubkey(userPublicKey)}
             </Badge>
           </div>
         </div>
