@@ -123,19 +123,39 @@ export default function NostrApp() {
       const secret = generateRandomSecret();
       setConnectionSecret(secret);
       
-      // Create the nostrconnect:// URL according to NIP-46
+      // Create the nostrconnect:// URL specifically for Amber
       const nostrConnectUrl = new URL(`nostrconnect://${keypair.publicKey}`);
       nostrConnectUrl.searchParams.append('relay', 'wss://relay.damus.io');
       nostrConnectUrl.searchParams.append('relay', 'wss://nos.lol');
       nostrConnectUrl.searchParams.append('secret', secret);
-      nostrConnectUrl.searchParams.append('name', 'Nostr Favor App');
-      nostrConnectUrl.searchParams.append('url', window.location.origin);
-      nostrConnectUrl.searchParams.append('perms', 'sign_event:1,sign_event:0,get_public_key');
+      nostrConnectUrl.searchParams.append('metadata', JSON.stringify({
+        name: 'Favor Channels',
+        description: 'Android Nostr app for tracking favors',
+        url: window.location.origin,
+        icons: []
+      }));
       
       const connectionString = nostrConnectUrl.toString();
       setQrCodeUrl(connectionString);
       
       console.log('Connection string generated:', connectionString);
+      
+      // For Android/Capacitor, try to open Amber directly
+      const isCapacitor = window.location.protocol === 'capacitor:';
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      
+      if (isCapacitor || isAndroid) {
+        const amberIntent = `intent://nostrconnect?uri=${encodeURIComponent(connectionString)}#Intent;package=com.greenart7c3.nostrsigner;scheme=nostrsigner;end`;
+        try {
+          window.open(amberIntent, '_system');
+          toast({
+            title: "Opening Amber",
+            description: "Attempting to open Amber signer directly",
+          });
+        } catch (e) {
+          console.log('Could not open Amber directly, using QR code');
+        }
+      }
       
       // Generate QR code after a small delay to ensure canvas is rendered
       setTimeout(async () => {
