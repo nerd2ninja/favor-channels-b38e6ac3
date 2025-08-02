@@ -15,6 +15,7 @@ import FavorChannelsTab from './FavorChannelsTab';
 import FavorNetworkTab from './FavorNetworkTab';
 import BottomNav from './BottomNav';
 import { NostrDebugPanel } from './NostrDebugPanel';
+import MainApp from './MainApp';
 
 interface NostrEvent extends Event {
   created_at: number;
@@ -1018,6 +1019,20 @@ export default function NostrApp() {
         );
     }
   };
+
+  // Show main app if authenticated
+  if (isAuthenticated && userPublicKey) {
+    return (
+      <MainApp 
+        userPublicKey={userPublicKey}
+        onLogout={() => {
+          setIsAuthenticated(false);
+          setUserPublicKey('');
+          setIsConnected(false);
+        }}
+      />
+    );
+  }
 
   if (!isAuthenticated) {
     return (
