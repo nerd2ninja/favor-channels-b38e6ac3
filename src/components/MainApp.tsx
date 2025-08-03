@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { useNostrSigning } from '@/hooks/useNostrSigning';
 import UserProfile from './UserProfile';
 import FavorsTab from './FavorsTab';
 import FavorChannelsTab from './FavorChannelsTab';
@@ -15,6 +16,31 @@ interface MainAppProps {
 }
 
 export default function MainApp({ userPublicKey, onLogout }: MainAppProps) {
+  const nostrSigning = useNostrSigning();
+  const { toast } = useToast();
+
+  // Initialize the signing hook with the user's data when component mounts
+  useEffect(() => {
+    const remoteSignerPubkey = localStorage.getItem('nostr-remote-signer-pubkey');
+    const clientKeypair = localStorage.getItem('nostr-client-keypair');
+    
+    if (userPublicKey && remoteSignerPubkey && clientKeypair) {
+      try {
+        nostrSigning.initialize(
+          userPublicKey,
+          remoteSignerPubkey,
+          JSON.parse(clientKeypair)
+        );
+      } catch (error) {
+        console.error('Failed to initialize nostr signing:', error);
+        toast({
+          title: "Connection Issue",
+          description: "Failed to initialize Amber connection",
+          variant: "destructive",
+        });
+      }
+    }
+  }, [userPublicKey, nostrSigning, toast]);
   const [activeTab, setActiveTab] = useState('profile');
   const [profile, setProfile] = useState({
     name: '',
@@ -28,7 +54,6 @@ export default function MainApp({ userPublicKey, onLogout }: MainAppProps) {
   });
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const { toast } = useToast();
 
   useEffect(() => {
     // Load profile from localStorage if available
@@ -82,9 +107,9 @@ export default function MainApp({ userPublicKey, onLogout }: MainAppProps) {
           />
         );
       case 'favors':
-        return <FavorsTab />;
+        return <FavorsTab nostrSigning={nostrSigning} />;
       case 'channels':
-        return <FavorChannelsTab />;
+        return <FavorChannelsTab nostrSigning={nostrSigning} />;
       case 'network':
         return <FavorNetworkTab />;
       default:

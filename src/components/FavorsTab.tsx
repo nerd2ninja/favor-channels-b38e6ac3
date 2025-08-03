@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Heart, Gift, HandHeart, Clock, MapPin, DollarSign, Plus } from 'lucide-react';
+import { useNostrSigning } from '@/hooks/useNostrSigning';
+import { useToast } from '@/hooks/use-toast';
 
 interface Favor {
   id: string;
@@ -59,7 +61,11 @@ const mockFavors: Favor[] = [
   },
 ];
 
-export default function FavorsTab() {
+interface FavorsTabProps {
+  nostrSigning: ReturnType<typeof useNostrSigning>;
+}
+
+export default function FavorsTab({ nostrSigning }: FavorsTabProps) {
   const [favors, setFavors] = useState<Favor[]>(mockFavors);
   const [isCreating, setIsCreating] = useState(false);
   const [newFavor, setNewFavor] = useState({
@@ -69,6 +75,7 @@ export default function FavorsTab() {
     location: '',
     reward: ''
   });
+  const { toast } = useToast();
 
   const formatTime = (timestamp: number) => {
     const diff = Date.now() - timestamp;
@@ -90,27 +97,76 @@ export default function FavorsTab() {
     ));
   };
 
-  const createFavor = () => {
+  const createFavor = async () => {
     if (!newFavor.title.trim() || !newFavor.description.trim()) return;
+    if (!nostrSigning.isConnected) {
+      toast({
+        title: "Not Connected",
+        description: "Please connect to Amber first",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    const favor: Favor = {
-      id: Date.now().toString(),
-      ...newFavor,
-      author: 'You',
-      timestamp: Date.now(),
-      likes: 0,
-      isLiked: false,
-    };
+    try {
+      // Create the favor content as JSON
+      const favorContent = {
+        title: newFavor.title,
+        description: newFavor.description,
+        category: newFavor.category,
+        location: newFavor.location,
+        reward: newFavor.reward,
+        timestamp: Date.now()
+      };
 
-    setFavors(prev => [favor, ...prev]);
-    setNewFavor({
-      title: '',
-      description: '',
-      category: 'request',
-      location: '',
-      reward: ''
-    });
-    setIsCreating(false);
+      // Create tags for the favor
+      const tags = [
+        ['t', 'favor'],
+        ['t', newFavor.category],
+      ];
+      if (newFavor.location) {
+        tags.push(['location', newFavor.location]);
+      }
+
+      // Sign the event using Amber
+      const signedEvent = await nostrSigning.createSignedEvent(
+        1, // kind 1 for text note
+        JSON.stringify(favorContent),
+        tags
+      );
+
+      // Create local favor object for UI
+      const favor: Favor = {
+        id: signedEvent.id,
+        ...newFavor,
+        author: nostrSigning.userPublicKey || 'You',
+        timestamp: Date.now(),
+        likes: 0,
+        isLiked: false,
+      };
+
+      setFavors(prev => [favor, ...prev]);
+      setNewFavor({
+        title: '',
+        description: '',
+        category: 'request',
+        location: '',
+        reward: ''
+      });
+      setIsCreating(false);
+
+      toast({
+        title: "Favor Created",
+        description: "Your favor has been signed and posted!",
+      });
+    } catch (error) {
+      console.error('Failed to create favor:', error);
+      toast({
+        title: "Failed to Create Favor",
+        description: error instanceof Error ? error.message : "Failed to sign favor",
+        variant: "destructive",
+      });
+    }
   };
 
   if (isCreating) {

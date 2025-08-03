@@ -16,6 +16,7 @@ import FavorNetworkTab from './FavorNetworkTab';
 import BottomNav from './BottomNav';
 import { NostrDebugPanel } from './NostrDebugPanel';
 import MainApp from './MainApp';
+import { useMockSigning } from '@/hooks/useMockSigning';
 
 interface NostrEvent extends Event {
   created_at: number;
@@ -661,12 +662,14 @@ export default function NostrApp() {
     return pubkey.slice(0, 8) + '...' + pubkey.slice(-8);
   };
 
+  const mockSigning = useMockSigning();
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'favors':
-        return <FavorsTab />;
+        return <FavorsTab nostrSigning={mockSigning} />;
       case 'favor-channels':
-        return <FavorChannelsTab />;
+        return <FavorChannelsTab nostrSigning={mockSigning} />;
       case 'favor-network':
         return <FavorNetworkTab />;
       case 'search':

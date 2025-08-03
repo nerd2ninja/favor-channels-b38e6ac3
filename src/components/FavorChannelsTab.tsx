@@ -6,25 +6,76 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Plus, User } from 'lucide-react';
 import { getFavorChannels, addFavorEntry, FavorChannel } from '@/data/favorChannels';
+import { useNostrSigning } from '@/hooks/useNostrSigning';
+import { useToast } from '@/hooks/use-toast';
 
-export default function FavorChannelsTab() {
+interface FavorChannelsTabProps {
+  nostrSigning: ReturnType<typeof useNostrSigning>;
+}
+
+export default function FavorChannelsTab({ nostrSigning }: FavorChannelsTabProps) {
   const [channels, setChannels] = useState<FavorChannel[]>(getFavorChannels());
   const [newPersonNpub, setNewPersonNpub] = useState('');
   const [favorAmount, setFavorAmount] = useState(1);
   const [favorDirection, setFavorDirection] = useState<'owe' | 'owed'>('owe');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const { toast } = useToast();
 
-  const handleAddFavor = () => {
+  const handleAddFavor = async () => {
     if (!newPersonNpub.trim()) return;
-    
-    const updatedChannels = addFavorEntry(newPersonNpub, favorAmount, favorDirection);
-    setChannels(updatedChannels);
-    
-    // Reset form
-    setNewPersonNpub('');
-    setFavorAmount(1);
-    setFavorDirection('owe');
-    setIsDialogOpen(false);
+    if (!nostrSigning.isConnected) {
+      toast({
+        title: "Not Connected",
+        description: "Please connect to Amber first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // First add to local storage
+      const updatedChannels = addFavorEntry(newPersonNpub, favorAmount, favorDirection);
+      setChannels(updatedChannels);
+
+      // Then create a signed event for the favor entry
+      const favorEntry = {
+        npub: newPersonNpub,
+        amount: favorAmount,
+        direction: favorDirection,
+        timestamp: Date.now()
+      };
+
+      const tags = [
+        ['t', 'favor-channel'],
+        ['p', newPersonNpub],
+        ['direction', favorDirection],
+        ['amount', favorAmount.toString()]
+      ];
+
+      await nostrSigning.createSignedEvent(
+        30000, // kind 30000 for parameterized replaceable event
+        JSON.stringify(favorEntry),
+        tags
+      );
+
+      // Reset form
+      setNewPersonNpub('');
+      setFavorAmount(1);
+      setFavorDirection('owe');
+      setIsDialogOpen(false);
+
+      toast({
+        title: "Favor Entry Added",
+        description: "Your favor entry has been signed and recorded!",
+      });
+    } catch (error) {
+      console.error('Failed to add favor entry:', error);
+      toast({
+        title: "Failed to Add Entry",
+        description: error instanceof Error ? error.message : "Failed to sign favor entry",
+        variant: "destructive",
+      });
+    }
   };
 
   const getBalancePercentage = (channel: FavorChannel) => {
