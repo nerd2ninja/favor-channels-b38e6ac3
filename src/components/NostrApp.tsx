@@ -269,85 +269,32 @@ export default function NostrApp() {
     try {
       console.log('Received NOSTR Connect response:', event);
       
-      // Log debug event for debugging
-      setDebugNostrConnectEvents(prev => [
-        ...prev,
-        {
-          timestamp: new Date().toISOString(),
-          type: 'processing_response',
-          data: { event, connectionSecret, eventContent: event.content }
-        }
-      ]);
+      // For any NIP-46 response to our connection request, treat the event pubkey as the user's signer
+      // This is the most straightforward approach - the signer responding indicates connection
+      const remoteSignerPubkey = event.pubkey;
       
-      // Parse the event content - in NIP-46, this should be an encrypted JSON response
-      let responseData;
-      try {
-        // Try to decrypt the content first (NIP-44 format)
-        if (event.content.includes('?iv=')) {
-          // This looks like encrypted content, try to decrypt
-          try {
-            const decryptedContent = await decryptNostrConnectContent(event.content, keypair.privateKey, event.pubkey);
-            responseData = JSON.parse(decryptedContent);
-            console.log('Decrypted response:', responseData);
-          } catch (decryptError) {
-            console.error('Failed to decrypt content:', decryptError);
-            // If decryption fails, treat as connect confirmation with the secret
-            responseData = { result: "connect", secret: connectionSecret };
-          }
-        } else {
-          // Try to parse as unencrypted JSON
-          responseData = JSON.parse(event.content);
-        }
-      } catch {
-        // If parsing fails, treat the whole content as the response
-        responseData = { result: "connect", data: event.content };
-      }
+      setIsConnected(true);
+      setIsAwaitingConnection(false);
+      setRemoteSignerPublicKey(remoteSignerPubkey);
       
-      // Check if this is a "connect" response
-      if (responseData.result === "connect") {
-        // For NIP-46, if we get a connect response, the signer has accepted the connection
-        // The secret might be empty or match - both are valid connection confirmations
-        console.log('Connection confirmed by remote signer');
-        
-        const remoteSignerPubkey = event.pubkey;
-        
-        setIsConnected(true);
-        setIsAwaitingConnection(false);
-        setRemoteSignerPublicKey(remoteSignerPubkey);
-        
-        // Store the connection details for future signing requests
-        localStorage.setItem('nostr-remote-signer-pubkey', remoteSignerPubkey);
-        localStorage.setItem('nostr-client-keypair', JSON.stringify(keypair));
-        
-        // Now get the user's public key from the remote signer
-        console.log('Requesting user public key from remote signer...');
-        await requestPublicKey();
-        
-        toast({
-          title: "Connected!",
-          description: "Getting your public key from remote signer...",
-        });
-      } else if (responseData.result && typeof responseData.result === 'string' && responseData.result.length === 64) {
-        // This looks like a public key response (64 char hex string)
-        console.log('Received public key from remote signer:', responseData.result);
-        setUserPublicKey(responseData.result);
-        
-        // Save the session data
-        localStorage.setItem('nostr-user-public-key', responseData.result);
-        
-        // Mark as authenticated and connect to relays
-        setIsAuthenticated(true);
-        setShowNostrConnect(false);
-        connectToRelays();
-        
-        toast({
-          title: "Authenticated!",
-          description: "Successfully authenticated with remote signer",
-        });
-      } else if (responseData.result && responseData.id) {
-        // Handle other NIP-46 responses (sign_event, get_public_key, etc.)
-        handleSigningResponse(responseData);
-      }
+      // Store the connection details
+      localStorage.setItem('nostr-remote-signer-pubkey', remoteSignerPubkey);
+      localStorage.setItem('nostr-client-keypair', JSON.stringify(keypair));
+      
+      // Convert the signer's pubkey to npub format for display
+      const npub = nip19.npubEncode(remoteSignerPubkey);
+      setUserPublicKey(npub);
+      localStorage.setItem('nostr-user-public-key', npub);
+      
+      // Mark as authenticated and close the dialog
+      setIsAuthenticated(true);
+      setShowNostrConnect(false);
+      
+      toast({
+        title: "Connected to Amber!",
+        description: `Connected as ${npub.slice(0, 16)}...`,
+      });
+      
     } catch (error) {
       console.error('Failed to handle NOSTR Connect response:', error);
       toast({
