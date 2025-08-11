@@ -25,7 +25,22 @@ export default function UserProfile({
   userPublicKey, 
   nostrSigning
 }: UserProfileProps) {
-  const { profile, loading, error, updateProfile, refreshProfile } = useNostrProfile(userPublicKey);
+  // Process the key first to get proper hex format
+  const { hexKey: processedHexKey } = (() => {
+    const cleanKey = userPublicKey?.startsWith('0npub') ? userPublicKey.slice(1) : userPublicKey;
+    if (cleanKey?.startsWith('npub')) {
+      try {
+        const decoded = nip19.decode(cleanKey);
+        const hexKey = decoded.data as string;
+        return { hexKey: hexKey.length === 63 ? '0' + hexKey : hexKey };
+      } catch (error) {
+        return { hexKey: '' };
+      }
+    }
+    return { hexKey: cleanKey?.length === 63 ? '0' + cleanKey : cleanKey || '' };
+  })();
+
+  const { profile, loading, error, updateProfile, refreshProfile } = useNostrProfile(processedHexKey);
   const [editedProfile, setEditedProfile] = useState({
     name: '',
     about: '',
@@ -54,44 +69,47 @@ export default function UserProfile({
     }
   }, [profile]);
 
-  // Helper function to ensure proper hex key format
-  const ensureHexKey = (key: string): string => {
-    console.log('UserProfile - ensureHexKey input:', key, 'length:', key?.length);
+  // Helper function to process the userPublicKey (could be npub or hex)
+  const processUserKey = (key: string): { hexKey: string; npub: string } => {
+    console.log('UserProfile - processUserKey input:', key, 'length:', key?.length);
     
-    // If it's an npub, decode it first
-    if (key?.startsWith('npub')) {
+    // Remove any accidental "0" prefix from npub
+    const cleanKey = key?.startsWith('0npub') ? key.slice(1) : key;
+    console.log('UserProfile - cleaned key:', cleanKey);
+    
+    // If it's an npub, decode it to get hex
+    if (cleanKey?.startsWith('npub')) {
       try {
-        const decoded = nip19.decode(key);
+        const decoded = nip19.decode(cleanKey);
         const hexKey = decoded.data as string;
         console.log('UserProfile - decoded npub to hex:', hexKey, 'length:', hexKey?.length);
-        return hexKey.length === 63 ? '0' + hexKey : hexKey;
+        
+        // Ensure hex is 64 characters
+        const properHex = hexKey.length === 63 ? '0' + hexKey : hexKey;
+        return { hexKey: properHex, npub: cleanKey };
       } catch (error) {
         console.error('UserProfile - Error decoding npub:', error);
-        return '';
+        return { hexKey: '', npub: '' };
       }
     }
     
-    // If it's already hex, ensure it's 64 characters
-    if (key?.length === 63) {
-      const paddedKey = '0' + key;
-      console.log('UserProfile - padded hex key:', paddedKey, 'length:', paddedKey.length);
-      return paddedKey;
+    // If it's hex, ensure it's 64 characters and generate npub
+    if (cleanKey?.length >= 63) {
+      const properHex = cleanKey.length === 63 ? '0' + cleanKey : cleanKey;
+      try {
+        const npub = nip19.npubEncode(properHex);
+        return { hexKey: properHex, npub };
+      } catch (error) {
+        console.error('UserProfile - Error encoding npub from hex:', error);
+        return { hexKey: properHex, npub: '' };
+      }
     }
     
-    return key || '';
+    return { hexKey: '', npub: '' };
   };
 
-  const hexKey = ensureHexKey(userPublicKey);
-  
-  let npub = '';
-  try {
-    if (hexKey && hexKey.length === 64) {
-      npub = nip19.npubEncode(hexKey);
-      console.log('UserProfile - npub encoded successfully:', npub.slice(0, 16) + '...');
-    }
-  } catch (error) {
-    console.error('UserProfile - Error encoding npub:', error, 'key:', hexKey);
-  }
+  const { hexKey, npub } = processUserKey(userPublicKey);
+  console.log('UserProfile - processed keys:', { hexKey: hexKey?.slice(0, 8) + '...', npub: npub?.slice(0, 16) + '...' });
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
