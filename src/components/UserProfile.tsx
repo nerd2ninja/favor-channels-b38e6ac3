@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -53,19 +54,43 @@ export default function UserProfile({
     }
   }, [profile]);
 
-  // Ensure userPublicKey is always 64 characters (pad with leading zero if needed)
-  console.log('UserProfile - userPublicKey received:', userPublicKey, 'length:', userPublicKey?.length);
-  const paddedPublicKey = userPublicKey?.length === 63 ? '0' + userPublicKey : userPublicKey;
-  console.log('UserProfile - paddedPublicKey:', paddedPublicKey, 'length:', paddedPublicKey?.length);
+  // Helper function to ensure proper hex key format
+  const ensureHexKey = (key: string): string => {
+    console.log('UserProfile - ensureHexKey input:', key, 'length:', key?.length);
+    
+    // If it's an npub, decode it first
+    if (key?.startsWith('npub')) {
+      try {
+        const decoded = nip19.decode(key);
+        const hexKey = decoded.data as string;
+        console.log('UserProfile - decoded npub to hex:', hexKey, 'length:', hexKey?.length);
+        return hexKey.length === 63 ? '0' + hexKey : hexKey;
+      } catch (error) {
+        console.error('UserProfile - Error decoding npub:', error);
+        return '';
+      }
+    }
+    
+    // If it's already hex, ensure it's 64 characters
+    if (key?.length === 63) {
+      const paddedKey = '0' + key;
+      console.log('UserProfile - padded hex key:', paddedKey, 'length:', paddedKey.length);
+      return paddedKey;
+    }
+    
+    return key || '';
+  };
+
+  const hexKey = ensureHexKey(userPublicKey);
   
   let npub = '';
   try {
-    if (paddedPublicKey && paddedPublicKey.length === 64) {
-      npub = nip19.npubEncode(paddedPublicKey);
+    if (hexKey && hexKey.length === 64) {
+      npub = nip19.npubEncode(hexKey);
       console.log('UserProfile - npub encoded successfully:', npub.slice(0, 16) + '...');
     }
   } catch (error) {
-    console.error('UserProfile - Error encoding npub:', error, 'key:', paddedPublicKey);
+    console.error('UserProfile - Error encoding npub:', error, 'key:', hexKey);
   }
 
   const copyToClipboard = (text: string, label: string) => {
@@ -240,6 +265,24 @@ export default function UserProfile({
                       placeholder="you@yourdomain.com"
                     />
                   </div>
+                  <div>
+                    <Label htmlFor="location">Location</Label>
+                    <Input
+                      id="location"
+                      value={editedProfile.location}
+                      onChange={(e) => setEditedProfile(prev => ({ ...prev, location: e.target.value }))}
+                      placeholder="Your location"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="lud16">Lightning Address</Label>
+                    <Input
+                      id="lud16"
+                      value={editedProfile.lud16}
+                      onChange={(e) => setEditedProfile(prev => ({ ...prev, lud16: e.target.value }))}
+                      placeholder="you@getalby.com"
+                    />
+                  </div>
                   <div className="flex gap-2 pt-4">
                     <Button onClick={handleSaveProfile} className="flex-1">
                       Save Changes
@@ -273,7 +316,7 @@ export default function UserProfile({
               </p>
             )}
             
-            {/* Profile Links */}
+            {/* Profile Links and Info */}
             <div className="flex flex-wrap gap-2">
               {currentProfile.website && (
                 <Button
@@ -292,6 +335,11 @@ export default function UserProfile({
                   {currentProfile.location}
                 </Badge>
               )}
+              {currentProfile.lud16 && (
+                <Badge variant="outline" className="text-xs">
+                  ⚡ {currentProfile.lud16}
+                </Badge>
+              )}
             </div>
           </div>
         </CardContent>
@@ -303,43 +351,73 @@ export default function UserProfile({
           <h3 className="text-lg font-semibold">Public Key Information</h3>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <Label className="text-sm font-medium text-muted-foreground">
-              Public Key (npub)
-            </Label>
-            <div className="flex items-center gap-2 mt-1">
-              <code className="flex-1 px-3 py-2 bg-muted rounded-md text-sm font-mono break-all">
-                {npub}
-              </code>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => copyToClipboard(npub, 'Public key')}
-              >
-                <Copy className="w-4 h-4" />
-              </Button>
+          {npub && (
+            <div>
+              <Label className="text-sm font-medium text-muted-foreground">
+                Public Key (npub)
+              </Label>
+              <div className="flex items-center gap-2 mt-1">
+                <code className="flex-1 px-3 py-2 bg-muted rounded-md text-sm font-mono break-all">
+                  {npub}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => copyToClipboard(npub, 'Public key')}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
           
-          <div>
-            <Label className="text-sm font-medium text-muted-foreground">
-              Hex Public Key
-            </Label>
-            <div className="flex items-center gap-2 mt-1">
-              <code className="flex-1 px-3 py-2 bg-muted rounded-md text-sm font-mono break-all">
-                {userPublicKey}
-              </code>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => copyToClipboard(userPublicKey, 'Hex public key')}
-              >
-                <Copy className="w-4 h-4" />
-              </Button>
+          {hexKey && (
+            <div>
+              <Label className="text-sm font-medium text-muted-foreground">
+                Hex Public Key
+              </Label>
+              <div className="flex items-center gap-2 mt-1">
+                <code className="flex-1 px-3 py-2 bg-muted rounded-md text-sm font-mono break-all">
+                  {hexKey}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => copyToClipboard(hexKey, 'Hex public key')}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Debug Info (can be removed in production) */}
+      {!profile && !loading && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardContent className="p-4">
+            <h4 className="font-semibold text-yellow-800">Profile Not Found</h4>
+            <p className="text-sm text-yellow-700 mt-1">
+              No profile data was found for this public key. This could mean:
+            </p>
+            <ul className="text-sm text-yellow-700 mt-2 list-disc list-inside">
+              <li>This is a new account that hasn't set up a profile yet</li>
+              <li>The profile hasn't been propagated to the relays we're checking</li>
+              <li>There might be connectivity issues with the relays</li>
+            </ul>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={refreshProfile}
+              className="mt-3"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
