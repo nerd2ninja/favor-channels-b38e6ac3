@@ -8,38 +8,49 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { User, Edit, Copy, Globe, Mail, MapPin } from 'lucide-react';
+import { useNostrProfile } from '@/hooks/useNostrProfile';
+import { User, Edit, Copy, Globe, Mail, MapPin, RefreshCw, Loader2 } from 'lucide-react';
 import { nip19 } from 'nostr-tools';
 
 interface UserProfileProps {
   userPublicKey: string;
-  profile: {
-    name: string;
-    about: string;
-    picture: string;
-    banner: string;
-    website: string;
-    nip05: string;
-    location?: string;
-    lud16?: string;
+  nostrSigning: {
+    signEvent: (event: any) => Promise<any>;
+    isConnected: boolean;
   };
-  onProfileUpdate: (profile: any) => void;
-  isEditing: boolean;
-  setIsEditing: (editing: boolean) => void;
 }
 
 export default function UserProfile({ 
   userPublicKey, 
-  profile, 
-  onProfileUpdate, 
-  isEditing, 
-  setIsEditing 
+  nostrSigning
 }: UserProfileProps) {
-  const [editedProfile, setEditedProfile] = useState(profile);
+  const { profile, loading, error, updateProfile, refreshProfile } = useNostrProfile(userPublicKey);
+  const [editedProfile, setEditedProfile] = useState({
+    name: '',
+    about: '',
+    picture: '',
+    banner: '',
+    website: '',
+    nip05: '',
+    location: '',
+    lud16: ''
+  });
+  const [isEditing, setIsEditing] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    setEditedProfile(profile);
+    if (profile) {
+      setEditedProfile({
+        name: profile.name || profile.display_name || '',
+        about: profile.about || '',
+        picture: profile.picture || '',
+        banner: profile.banner || '',
+        website: profile.website || '',
+        nip05: profile.nip05 || '',
+        location: profile.location || '',
+        lud16: profile.lud16 || ''
+      });
+    }
   }, [profile]);
 
   const npub = userPublicKey ? nip19.npubEncode(userPublicKey) : '';
@@ -52,13 +63,22 @@ export default function UserProfile({
     });
   };
 
-  const handleSaveProfile = () => {
-    onProfileUpdate(editedProfile);
-    setIsEditing(false);
-    toast({
-      title: "Profile Updated",
-      description: "Your profile has been updated successfully",
-    });
+  const handleSaveProfile = async () => {
+    if (!nostrSigning.isConnected) {
+      toast({
+        title: "Not Connected",
+        description: "Please connect to Amber first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await updateProfile(editedProfile, nostrSigning.signEvent);
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Failed to update profile:', error);
+    }
   };
 
   const getInitials = (name: string) => {
@@ -70,15 +90,59 @@ export default function UserProfile({
       .slice(0, 2);
   };
 
+  if (loading) {
+    return (
+      <div className="max-w-2xl mx-auto p-4 space-y-6">
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Loader2 className="h-8 w-8 mx-auto mb-4 animate-spin text-primary" />
+            <h3 className="text-lg font-semibold mb-2">Loading Profile</h3>
+            <p className="text-muted-foreground">
+              Fetching your profile from the Nostr network...
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const currentProfile = profile || {
+    name: '',
+    about: '',
+    picture: '',
+    banner: '',
+    website: '',
+    nip05: '',
+    location: '',
+    lud16: ''
+  };
+
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-6">
+      {error && (
+        <Card className="border-destructive">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-semibold text-destructive">Profile Load Error</h4>
+                <p className="text-sm text-muted-foreground">{error}</p>
+              </div>
+              <Button onClick={refreshProfile} variant="outline" size="sm">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Profile Header Card */}
       <Card className="relative overflow-hidden">
         {/* Banner */}
         <div 
           className="h-32 bg-gradient-to-r from-primary/20 to-primary/10 relative"
           style={{
-            backgroundImage: profile.banner ? `url(${profile.banner})` : undefined,
+            backgroundImage: currentProfile.banner ? `url(${currentProfile.banner})` : undefined,
             backgroundSize: 'cover',
             backgroundPosition: 'center'
           }}
@@ -90,9 +154,9 @@ export default function UserProfile({
           {/* Avatar */}
           <div className="flex justify-between items-start -mt-16 mb-4">
             <Avatar className="w-24 h-24 border-4 border-background shadow-lg">
-              <AvatarImage src={profile.picture} alt={profile.name || 'User'} />
+              <AvatarImage src={currentProfile.picture} alt={currentProfile.name || 'User'} />
               <AvatarFallback className="text-xl font-semibold">
-                {profile.name ? getInitials(profile.name) : <User className="w-8 h-8" />}
+                {currentProfile.name ? getInitials(currentProfile.name) : <User className="w-8 h-8" />}
               </AvatarFallback>
             </Avatar>
             
@@ -180,39 +244,39 @@ export default function UserProfile({
           <div className="space-y-3">
             <div>
               <h1 className="text-2xl font-bold">
-                {profile.name || 'Anonymous User'}
+                {currentProfile.name || currentProfile.display_name || 'Anonymous User'}
               </h1>
-              {profile.nip05 && (
+              {currentProfile.nip05 && (
                 <Badge variant="secondary" className="mt-1">
                   <Mail className="w-3 h-3 mr-1" />
-                  {profile.nip05}
+                  {currentProfile.nip05}
                 </Badge>
               )}
             </div>
             
-            {profile.about && (
+            {currentProfile.about && (
               <p className="text-muted-foreground leading-relaxed">
-                {profile.about}
+                {currentProfile.about}
               </p>
             )}
             
             {/* Profile Links */}
             <div className="flex flex-wrap gap-2">
-              {profile.website && (
+              {currentProfile.website && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => window.open(profile.website, '_blank')}
+                  onClick={() => window.open(currentProfile.website, '_blank')}
                   className="text-xs"
                 >
                   <Globe className="w-3 h-3 mr-1" />
                   Website
                 </Button>
               )}
-              {profile.location && (
+              {currentProfile.location && (
                 <Badge variant="outline">
                   <MapPin className="w-3 h-3 mr-1" />
-                  {profile.location}
+                  {currentProfile.location}
                 </Badge>
               )}
             </div>

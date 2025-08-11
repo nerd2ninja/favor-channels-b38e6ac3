@@ -42,43 +42,8 @@ export default function MainApp({ userPublicKey, onLogout }: MainAppProps) {
     }
   }, [userPublicKey, nostrSigning, toast]);
   const [activeTab, setActiveTab] = useState('favors');
-  const [profile, setProfile] = useState({
-    name: '',
-    about: '',
-    picture: '',
-    banner: '',
-    website: '',
-    nip05: '',
-    location: '',
-    lud16: ''
-  });
-  const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  useEffect(() => {
-    // Load profile from localStorage if available
-    const savedProfile = localStorage.getItem(`nostr-profile-${userPublicKey}`);
-    if (savedProfile) {
-      try {
-        setProfile(JSON.parse(savedProfile));
-      } catch (error) {
-        console.error('Failed to parse saved profile:', error);
-      }
-    }
-  }, [userPublicKey]);
-
-  const handleProfileUpdate = (updatedProfile: any) => {
-    setProfile(updatedProfile);
-    // Save to localStorage
-    localStorage.setItem(`nostr-profile-${userPublicKey}`, JSON.stringify(updatedProfile));
-    
-    // Here you would typically publish a kind 0 event to update the profile on Nostr
-    // For now, we'll just save locally
-    toast({
-      title: "Profile Updated",
-      description: "Profile saved locally. Publishing to Nostr will be implemented in Phase 2.",
-    });
-  };
 
   const handleLogout = () => {
     // Clear all session data
@@ -100,10 +65,7 @@ export default function MainApp({ userPublicKey, onLogout }: MainAppProps) {
         return (
           <UserProfile
             userPublicKey={userPublicKey}
-            profile={profile}
-            onProfileUpdate={handleProfileUpdate}
-            isEditing={isEditingProfile}
-            setIsEditing={setIsEditingProfile}
+            nostrSigning={nostrSigning}
           />
         );
       case 'favors':
