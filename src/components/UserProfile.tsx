@@ -53,7 +53,9 @@ export default function UserProfile({
     }
   }, [profile]);
 
-  const npub = userPublicKey ? nip19.npubEncode(userPublicKey) : '';
+  // Ensure userPublicKey is always 64 characters (pad with leading zero if needed)
+  const paddedPublicKey = userPublicKey.length === 63 ? '0' + userPublicKey : userPublicKey;
+  const npub = paddedPublicKey && paddedPublicKey.length === 64 ? nip19.npubEncode(paddedPublicKey) : '';
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);

@@ -278,14 +278,10 @@ export default function NostrApp() {
       setIsAwaitingConnection(false);
       setRemoteSignerPublicKey(remoteSignerPubkey);
       
-      // Store the connection details
-      localStorage.setItem('nostr-remote-signer-pubkey', remoteSignerPubkey);
-      localStorage.setItem('nostr-client-keypair', JSON.stringify(keypair));
       
-      // Convert the signer's pubkey to npub format for display
-      const npub = nip19.npubEncode(remoteSignerPubkey);
-      setUserPublicKey(npub);
-      localStorage.setItem('nostr-user-public-key', npub);
+      // Store the signer's public key in hex format (not npub)
+      setUserPublicKey(remoteSignerPubkey);
+      localStorage.setItem('nostr-user-public-key', remoteSignerPubkey);
       
       // Mark as authenticated and close the dialog
       setIsAuthenticated(true);
@@ -293,7 +289,7 @@ export default function NostrApp() {
       
       toast({
         title: "Connected to Amber!",
-        description: `Connected as ${npub.slice(0, 16)}...`,
+        description: `Connected as ${nip19.npubEncode(remoteSignerPubkey).slice(0, 16)}...`,
       });
       
     } catch (error) {

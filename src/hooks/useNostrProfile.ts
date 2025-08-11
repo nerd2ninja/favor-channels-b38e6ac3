@@ -36,7 +36,10 @@ export function useNostrProfile(userPublicKey: string | null): UseNostrProfileRe
   const { toast } = useToast();
 
   const fetchProfile = useCallback(async () => {
-    if (!userPublicKey) return;
+    if (!userPublicKey || userPublicKey.length < 63) return;
+
+    // Ensure userPublicKey is padded to 64 characters
+    const paddedPublicKey = userPublicKey.length === 63 ? '0' + userPublicKey : userPublicKey;
 
     setLoading(true);
     setError(null);
@@ -50,7 +53,7 @@ export function useNostrProfile(userPublicKey: string | null): UseNostrProfileRe
 
       const filter: Filter = {
         kinds: [0],
-        authors: [userPublicKey],
+        authors: [paddedPublicKey],
         limit: 1
       };
 
@@ -102,7 +105,7 @@ export function useNostrProfile(userPublicKey: string | null): UseNostrProfileRe
 
       if (!profileFound) {
         // Check localStorage as fallback
-        const savedProfile = localStorage.getItem(`nostr-profile-${userPublicKey}`);
+        const savedProfile = localStorage.getItem(`nostr-profile-${paddedPublicKey}`);
         if (savedProfile) {
           try {
             setProfile(JSON.parse(savedProfile));
@@ -124,7 +127,10 @@ export function useNostrProfile(userPublicKey: string | null): UseNostrProfileRe
     newProfile: NostrProfile, 
     signEvent: (event: Partial<Event>) => Promise<Event>
   ) => {
-    if (!userPublicKey) throw new Error('No user public key available');
+    if (!userPublicKey || userPublicKey.length < 63) throw new Error('No user public key available');
+    
+    // Ensure userPublicKey is padded to 64 characters
+    const paddedPublicKey = userPublicKey.length === 63 ? '0' + userPublicKey : userPublicKey;
 
     try {
       // Create kind 0 event for profile update
@@ -133,7 +139,7 @@ export function useNostrProfile(userPublicKey: string | null): UseNostrProfileRe
         content: JSON.stringify(newProfile),
         tags: [],
         created_at: Math.floor(Date.now() / 1000),
-        pubkey: userPublicKey,
+        pubkey: paddedPublicKey,
       };
 
       // Sign the event
@@ -169,7 +175,7 @@ export function useNostrProfile(userPublicKey: string | null): UseNostrProfileRe
 
       // Update local state and storage
       setProfile(newProfile);
-      localStorage.setItem(`nostr-profile-${userPublicKey}`, JSON.stringify(newProfile));
+      localStorage.setItem(`nostr-profile-${paddedPublicKey}`, JSON.stringify(newProfile));
 
       toast({
         title: "Profile Updated",
