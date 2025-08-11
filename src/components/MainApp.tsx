@@ -41,7 +41,7 @@ export default function MainApp({ userPublicKey, onLogout }: MainAppProps) {
       }
     }
   }, [userPublicKey, nostrSigning, toast]);
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState('favors');
   const [profile, setProfile] = useState({
     name: '',
     about: '',

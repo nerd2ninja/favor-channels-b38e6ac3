@@ -7,12 +7,9 @@ interface BottomNavProps {
 }
 
 const tabs = [
-  { id: 'home', label: 'Home', icon: Home },
-  { id: 'search', label: 'Search', icon: Search },
   { id: 'favors', label: 'Favors', icon: Heart },
-  { id: 'favor-channels', label: 'Channels', icon: GitBranch },
-  { id: 'favor-network', label: 'Network', icon: Network },
-  { id: 'messages', label: 'Messages', icon: MessageSquare },
+  { id: 'channels', label: 'Channels', icon: GitBranch },
+  { id: 'network', label: 'Network', icon: Network },
   { id: 'profile', label: 'Profile', icon: User },
 ];
 
