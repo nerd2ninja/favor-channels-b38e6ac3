@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Event, getEventHash } from 'nostr-tools';
+import { Event, getEventHash, nip19 } from 'nostr-tools';
 import { useToast } from '@/hooks/use-toast';
 
 interface SigningRequest {
@@ -200,8 +200,28 @@ export function useNostrSigning() {
   }, [sendRequest]);
 
   const createSignedEvent = useCallback(async (kind: number, content: string, tags: string[][] = []): Promise<Event> => {
+    console.log('useNostrSigning - createSignedEvent called with userPublicKey:', state.userPublicKey, 'length:', state.userPublicKey?.length);
+    
     if (!state.userPublicKey) {
       throw new Error('User public key not available');
+    }
+
+    // Handle both npub and hex formats
+    let hexPubkey = state.userPublicKey;
+    if (state.userPublicKey.startsWith('npub')) {
+      try {
+        hexPubkey = nip19.decode(state.userPublicKey).data as string;
+        console.log('useNostrSigning - decoded npub to hex:', hexPubkey, 'length:', hexPubkey?.length);
+      } catch (error) {
+        console.error('useNostrSigning - Error decoding npub:', error);
+        throw new Error('Invalid npub format');
+      }
+    }
+    
+    // Ensure hex key is 64 characters
+    if (hexPubkey.length === 63) {
+      hexPubkey = '0' + hexPubkey;
+      console.log('useNostrSigning - padded hex key:', hexPubkey, 'length:', hexPubkey.length);
     }
 
     const unsignedEvent: Partial<Event> = {
@@ -209,11 +229,10 @@ export function useNostrSigning() {
       content,
       tags,
       created_at: Math.floor(Date.now() / 1000),
-      pubkey: state.userPublicKey.startsWith('npub') 
-        ? state.userPublicKey.slice(4) // Remove npub prefix if present
-        : state.userPublicKey,
+      pubkey: hexPubkey,
     };
 
+    console.log('useNostrSigning - unsignedEvent pubkey:', unsignedEvent.pubkey, 'length:', unsignedEvent.pubkey?.length);
     return await signEvent(unsignedEvent);
   }, [state.userPublicKey, signEvent]);
 

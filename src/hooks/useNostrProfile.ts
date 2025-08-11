@@ -36,10 +36,15 @@ export function useNostrProfile(userPublicKey: string | null): UseNostrProfileRe
   const { toast } = useToast();
 
   const fetchProfile = useCallback(async () => {
-    if (!userPublicKey || userPublicKey.length < 63) return;
+    console.log('useNostrProfile - fetchProfile called with userPublicKey:', userPublicKey, 'length:', userPublicKey?.length);
+    if (!userPublicKey || userPublicKey.length < 63) {
+      console.log('useNostrProfile - Invalid userPublicKey, returning early');
+      return;
+    }
 
     // Ensure userPublicKey is padded to 64 characters
     const paddedPublicKey = userPublicKey.length === 63 ? '0' + userPublicKey : userPublicKey;
+    console.log('useNostrProfile - paddedPublicKey:', paddedPublicKey, 'length:', paddedPublicKey?.length);
 
     setLoading(true);
     setError(null);

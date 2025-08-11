@@ -69,8 +69,23 @@ export default function NostrApp() {
     const savedClientKeypair = localStorage.getItem('nostr-client-keypair');
     const savedRemoteSignerPubkey = localStorage.getItem('nostr-remote-signer-pubkey');
     
+    console.log('NostrApp - Loading from localStorage:', {
+      savedUserPublicKey,
+      userKeyLength: savedUserPublicKey?.length,
+      savedClientKeypair: !!savedClientKeypair,
+      savedRemoteSignerPubkey: !!savedRemoteSignerPubkey
+    });
+    
     if (savedUserPublicKey && savedClientKeypair && savedRemoteSignerPubkey) {
-      setUserPublicKey(savedUserPublicKey);
+      // Ensure the public key is properly formatted (pad if 63 chars)
+      let publicKey = savedUserPublicKey;
+      if (publicKey.length === 63) {
+        publicKey = '0' + publicKey;
+        console.log('NostrApp - Padded saved public key:', publicKey, 'length:', publicKey.length);
+        localStorage.setItem('nostr-user-public-key', publicKey); // Update localStorage with padded key
+      }
+      
+      setUserPublicKey(publicKey);
       setClientKeypair(JSON.parse(savedClientKeypair));
       setRemoteSignerPublicKey(savedRemoteSignerPubkey);
       setIsAuthenticated(true);
@@ -325,10 +340,19 @@ export default function NostrApp() {
       });
     } else if (responseData.result === "get_public_key" && responseData.result_data) {
       // Got public key from signer
-      setUserPublicKey(responseData.result_data);
+      console.log('NostrApp - Got public key from signer:', responseData.result_data, 'length:', responseData.result_data?.length);
+      
+      // Ensure the public key is properly formatted (pad if 63 chars)
+      let publicKey = responseData.result_data;
+      if (publicKey.length === 63) {
+        publicKey = '0' + publicKey;
+        console.log('NostrApp - Padded public key:', publicKey, 'length:', publicKey.length);
+      }
+      
+      setUserPublicKey(publicKey);
       
       // Save the session data
-      localStorage.setItem('nostr-user-public-key', responseData.result_data);
+      localStorage.setItem('nostr-user-public-key', publicKey);
       
       // Mark as authenticated and connect to relays
       setIsAuthenticated(true);
