@@ -50,10 +50,13 @@ export function useNostrProfile(userPublicKey: string | null): UseNostrProfileRe
     setError(null);
 
     try {
+      console.log('useNostrProfile - Connecting to relays:', RELAYS);
+      
       // Connect to multiple relays and fetch profile
-      const connections = RELAYS.map(relay => {
+      const connections = RELAYS.map((relay, index) => {
+        console.log(`useNostrProfile - Creating connection ${index} to ${relay}`);
         const ws = new WebSocket(relay);
-        return ws;
+        return { ws, relay, index };
       });
 
       const filter: Filter = {
@@ -61,45 +64,76 @@ export function useNostrProfile(userPublicKey: string | null): UseNostrProfileRe
         authors: [paddedPublicKey],
         limit: 1
       };
+      
+      console.log('useNostrProfile - Using filter:', filter);
 
       let profileFound = false;
+      let connectedRelays = 0;
+      let responseCount = 0;
 
-      const promises = connections.map(ws => {
+      const promises = connections.map(({ ws, relay, index }) => {
         return new Promise<void>((resolve) => {
           const timeout = setTimeout(() => {
+            console.log(`useNostrProfile - Timeout for relay ${index} (${relay})`);
             ws.close();
             resolve();
-          }, 5000);
+          }, 10000); // Increased timeout to 10 seconds
 
           ws.onopen = () => {
-            ws.send(JSON.stringify(['REQ', 'profile', filter]));
+            connectedRelays++;
+            console.log(`useNostrProfile - Connected to relay ${index} (${relay}). Total connected: ${connectedRelays}`);
+            const reqMessage = JSON.stringify(['REQ', `profile-${index}`, filter]);
+            console.log(`useNostrProfile - Sending REQ to relay ${index}:`, reqMessage);
+            ws.send(reqMessage);
           };
 
           ws.onmessage = (event) => {
             try {
               const message = JSON.parse(event.data);
+              responseCount++;
+              console.log(`useNostrProfile - Message from relay ${index} (${relay}):`, message);
               
               if (message[0] === 'EVENT' && message[2]?.kind === 0) {
                 const profileEvent = message[2] as Event;
-                const profileData = JSON.parse(profileEvent.content) as NostrProfile;
+                console.log(`useNostrProfile - Found profile event from relay ${index}:`, profileEvent);
                 
-                if (!profileFound) {
-                  profileFound = true;
-                  setProfile(profileData);
+                try {
+                  const profileData = JSON.parse(profileEvent.content) as NostrProfile;
+                  console.log('useNostrProfile - Parsed profile data:', profileData);
+                  
+                  if (!profileFound) {
+                    profileFound = true;
+                    setProfile(profileData);
+                    console.log('useNostrProfile - Profile set successfully');
+                  }
+                } catch (parseErr) {
+                  console.error(`useNostrProfile - Error parsing profile content from relay ${index}:`, parseErr, 'content:', profileEvent.content);
                 }
               }
               
               if (message[0] === 'EOSE') {
+                console.log(`useNostrProfile - EOSE received from relay ${index} (${relay})`);
                 clearTimeout(timeout);
                 ws.close();
                 resolve();
               }
+              
+              if (message[0] === 'NOTICE') {
+                console.log(`useNostrProfile - NOTICE from relay ${index} (${relay}):`, message[1]);
+              }
             } catch (err) {
-              console.error('Error parsing message:', err);
+              console.error(`useNostrProfile - Error parsing message from relay ${index}:`, err, 'raw message:', event.data);
             }
           };
 
-          ws.onerror = () => {
+          ws.onerror = (error) => {
+            console.error(`useNostrProfile - WebSocket error for relay ${index} (${relay}):`, error);
+            clearTimeout(timeout);
+            resolve();
+          };
+
+          ws.onclose = (event) => {
+            console.log(`useNostrProfile - Connection closed for relay ${index} (${relay}):`, event.code, event.reason);
             clearTimeout(timeout);
             resolve();
           };
