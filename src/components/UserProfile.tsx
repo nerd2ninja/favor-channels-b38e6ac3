@@ -10,8 +10,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useNostrProfile } from '@/hooks/useNostrProfile';
+import { useNostrEvents } from '@/hooks/useNostrEvents';
 import RelayManager from '@/components/RelayManager';
-import { User, Edit, Copy, Globe, Mail, MapPin, RefreshCw, Loader2 } from 'lucide-react';
+import { User, Edit, Copy, Globe, Mail, MapPin, RefreshCw, Loader2, MessageSquare, Clock } from 'lucide-react';
 import { nip19 } from 'nostr-tools';
 
 interface UserProfileProps {
@@ -42,6 +43,7 @@ export default function UserProfile({
   })();
 
   const { profile, loading, error, updateProfile, refreshProfile } = useNostrProfile(processedHexKey);
+  const { events: userNotes, loading: notesLoading, error: notesError, refreshEvents } = useNostrEvents(processedHexKey, [1]);
   const [editedProfile, setEditedProfile] = useState({
     name: '',
     about: '',
@@ -407,6 +409,73 @@ export default function UserProfile({
                   <Copy className="w-4 h-4" />
                 </Button>
               </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* User Notes */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <MessageSquare className="w-5 h-5" />
+            Recent Notes
+          </h3>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={refreshEvents}
+            disabled={notesLoading}
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${notesLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {notesLoading ? (
+            <div className="text-center py-8">
+              <Loader2 className="h-6 w-6 mx-auto mb-2 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">Loading notes...</p>
+            </div>
+          ) : notesError ? (
+            <div className="text-center py-8">
+              <p className="text-sm text-destructive mb-2">Failed to load notes: {notesError}</p>
+              <Button variant="outline" size="sm" onClick={refreshEvents}>
+                Try Again
+              </Button>
+            </div>
+          ) : userNotes.length === 0 ? (
+            <div className="text-center py-8">
+              <MessageSquare className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
+              <p className="text-muted-foreground">No notes found</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                This user hasn't posted any notes yet, or they haven't propagated to the relays.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {userNotes.map((note) => (
+                <div key={note.id} className="border rounded-lg p-4 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <p className="text-sm leading-relaxed flex-1">{note.content}</p>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {new Date(note.created_at * 1000).toLocaleString()}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => copyToClipboard(note.id, 'Note ID')}
+                      className="h-auto p-1 text-xs"
+                    >
+                      <Copy className="w-3 h-3 mr-1" />
+                      ID: {note.id.slice(0, 8)}...
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
