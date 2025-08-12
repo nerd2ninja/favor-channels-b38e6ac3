@@ -414,6 +414,9 @@ export default function UserProfile({
         </CardContent>
       </Card>
 
+      {/* Relay Management */}
+      <RelayManager />
+
       {/* User Notes */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -455,34 +458,39 @@ export default function UserProfile({
           ) : (
             <div className="space-y-4">
               {userNotes.map((note) => (
-                <div key={note.id} className="border rounded-lg p-4 space-y-3">
-                  <div className="flex items-start justify-between">
-                    <p className="text-sm leading-relaxed flex-1">{note.content}</p>
+                <div key={note.id} className="border rounded-lg p-4 space-y-3 bg-card/50">
+                  <div className="prose prose-sm max-w-none">
+                    <p className="whitespace-pre-wrap break-words m-0">{note.content}</p>
                   </div>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="w-3 h-3" />
-                      {new Date(note.created_at * 1000).toLocaleString()}
+                      {new Date(note.created_at * 1000).toLocaleDateString()} at{' '}
+                      {new Date(note.created_at * 1000).toLocaleTimeString()}
                     </div>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => copyToClipboard(note.id, 'Note ID')}
-                      className="h-auto p-1 text-xs"
+                      className="h-auto px-2 py-1 text-xs hover:bg-muted"
                     >
                       <Copy className="w-3 h-3 mr-1" />
-                      ID: {note.id.slice(0, 8)}...
+                      {note.id.slice(0, 8)}...
                     </Button>
                   </div>
                 </div>
               ))}
+              {userNotes.length >= 20 && (
+                <div className="text-center pt-4">
+                  <p className="text-xs text-muted-foreground">
+                    Showing latest 20 notes
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
       </Card>
-
-      {/* Relay Management */}
-      <RelayManager />
 
       {/* Debug Info (can be removed in production) */}
       {!profile && !loading && (
