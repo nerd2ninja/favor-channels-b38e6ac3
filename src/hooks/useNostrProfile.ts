@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Filter, Event } from 'nostr-tools';
 import { useToast } from '@/hooks/use-toast';
+import { useRelays } from '@/hooks/useRelays';
 
 interface NostrProfile {
   name?: string;
@@ -22,18 +23,12 @@ interface UseNostrProfileReturn {
   refreshProfile: () => void;
 }
 
-const RELAYS = [
-  'wss://relay.damus.io',
-  'wss://nos.lol',
-  'wss://relay.primal.net',
-  'wss://relay.nostr.band'
-];
-
 export function useNostrProfile(userPublicKey: string | null): UseNostrProfileReturn {
   const [profile, setProfile] = useState<NostrProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const { relays } = useRelays();
 
   const fetchProfile = useCallback(async () => {
     console.log('useNostrProfile - fetchProfile called with userPublicKey:', userPublicKey, 'length:', userPublicKey?.length);
@@ -50,10 +45,10 @@ export function useNostrProfile(userPublicKey: string | null): UseNostrProfileRe
     setError(null);
 
     try {
-      console.log('useNostrProfile - Connecting to relays:', RELAYS);
+      console.log('useNostrProfile - Connecting to relays:', relays);
       
       // Connect to multiple relays and fetch profile
-      const connections = RELAYS.map((relay, index) => {
+      const connections = relays.map((relay, index) => {
         console.log(`useNostrProfile - Creating connection ${index} to ${relay}`);
         const ws = new WebSocket(relay);
         return { ws, relay, index };
@@ -185,7 +180,7 @@ export function useNostrProfile(userPublicKey: string | null): UseNostrProfileRe
       const signedEvent = await signEvent(unsignedEvent);
 
       // Publish to relays
-      const connections = RELAYS.map(relay => new WebSocket(relay));
+      const connections = relays.map(relay => new WebSocket(relay));
       
       const publishPromises = connections.map(ws => {
         return new Promise<void>((resolve) => {

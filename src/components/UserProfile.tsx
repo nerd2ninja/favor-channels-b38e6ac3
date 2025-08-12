@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useNostrProfile } from '@/hooks/useNostrProfile';
+import RelayManager from '@/components/RelayManager';
 import { User, Edit, Copy, Globe, Mail, MapPin, RefreshCw, Loader2 } from 'lucide-react';
 import { nip19 } from 'nostr-tools';
 
@@ -410,6 +411,9 @@ export default function UserProfile({
           )}
         </CardContent>
       </Card>
+
+      {/* Relay Management */}
+      <RelayManager />
 
       {/* Debug Info (can be removed in production) */}
       {!profile && !loading && (
