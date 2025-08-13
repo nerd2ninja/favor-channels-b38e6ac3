@@ -26,6 +26,8 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
   const fetchEvents = useCallback(async (isLoadingMore = false, until?: number) => {
     if (!userPublicKey || userPublicKey.length < 63) {
       console.log('useNostrEvents - Invalid userPublicKey, returning early');
+      setLoading(false);
+      setLoadingMore(false);
       return;
     }
 
@@ -66,14 +68,23 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
 
       let foundEvents: Event[] = [];
       let connectedRelays = 0;
+      let completedConnections = 0;
+      const totalConnections = connections.length;
 
       const promises = connections.map(({ ws, relay, index }) => {
         return new Promise<void>((resolve) => {
           const timeout = setTimeout(() => {
             console.log(`useNostrEvents - Timeout for relay ${index} (${relay})`);
             ws.close();
+            completedConnections++;
+            
+            // Stop loading once all connections are done, even if no events
+            if (completedConnections === totalConnections) {
+              setLoading(false);
+              setLoadingMore(false);
+            }
             resolve();
-          }, 10000);
+          }, 5000); // Reduced timeout
 
           ws.onopen = () => {
             connectedRelays++;
@@ -102,6 +113,21 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
                   if (!oldestTimestamp.current || nostrEvent.created_at < oldestTimestamp.current) {
                     oldestTimestamp.current = nostrEvent.created_at;
                   }
+
+                  // Update events immediately to show them as they arrive
+                  const sortedEvents = [...foundEvents].sort((a, b) => b.created_at - a.created_at);
+                  
+                  if (isLoadingMore) {
+                    setEvents(prev => {
+                      const combined = [...prev, ...sortedEvents];
+                      const unique = combined.filter((event, index, arr) => 
+                        arr.findIndex(e => e.id === event.id) === index
+                      );
+                      return unique.sort((a, b) => b.created_at - a.created_at);
+                    });
+                  } else {
+                    setEvents(sortedEvents);
+                  }
                 }
               }
               
@@ -109,6 +135,13 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
                 console.log(`useNostrEvents - EOSE received from relay ${index} (${relay})`);
                 clearTimeout(timeout);
                 ws.close();
+                completedConnections++;
+                
+                // Stop loading once all connections are done
+                if (completedConnections === totalConnections) {
+                  setLoading(false);
+                  setLoadingMore(false);
+                }
                 resolve();
               }
               
@@ -123,12 +156,26 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
           ws.onerror = (error) => {
             console.error(`useNostrEvents - WebSocket error for relay ${index} (${relay}):`, error);
             clearTimeout(timeout);
+            completedConnections++;
+            
+            // Stop loading once all connections are done, even with errors
+            if (completedConnections === totalConnections) {
+              setLoading(false);
+              setLoadingMore(false);
+            }
             resolve();
           };
 
           ws.onclose = (event) => {
             console.log(`useNostrEvents - Connection closed for relay ${index} (${relay}):`, event.code, event.reason);
             clearTimeout(timeout);
+            completedConnections++;
+            
+            // Stop loading once all connections are done
+            if (completedConnections === totalConnections) {
+              setLoading(false);
+              setLoadingMore(false);
+            }
             resolve();
           };
         });
@@ -136,28 +183,32 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
 
       await Promise.all(promises);
 
-      // Sort events by created_at (newest first)
-      foundEvents.sort((a, b) => b.created_at - a.created_at);
-      
-      console.log(`useNostrEvents - Final events count: ${foundEvents.length}`);
-      
-      if (isLoadingMore) {
-        // Append to existing events
-        setEvents(prev => {
-          const combined = [...prev, ...foundEvents];
-          // Remove duplicates and sort
-          const unique = combined.filter((event, index, arr) => 
-            arr.findIndex(e => e.id === event.id) === index
-          );
-          return unique.sort((a, b) => b.created_at - a.created_at);
-        });
-      } else {
-        // Replace events for fresh load
-        setEvents(foundEvents);
+      // Final sort and check for more events
+      if (foundEvents.length > 0) {
+        foundEvents.sort((a, b) => b.created_at - a.created_at);
+        console.log(`useNostrEvents - Final events count: ${foundEvents.length}`);
+        
+        // Final update if we haven't already updated
+        if (isLoadingMore) {
+          setEvents(prev => {
+            const combined = [...prev, ...foundEvents];
+            const unique = combined.filter((event, index, arr) => 
+              arr.findIndex(e => e.id === event.id) === index
+            );
+            return unique.sort((a, b) => b.created_at - a.created_at);
+          });
+        } else {
+          setEvents(foundEvents);
+        }
       }
 
       // Check if we have more events to load
       setHasMore(foundEvents.length === 20);
+
+      // If no relays connected, show error
+      if (connectedRelays === 0) {
+        setError('Unable to connect to any Nostr relays');
+      }
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch events';
