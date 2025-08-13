@@ -75,6 +75,11 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
                 if (!foundEvents.some(e => e.id === nostrEvent.id)) {
                   foundEvents.push(nostrEvent);
                   console.log(`useNostrEvents - Added event, total: ${foundEvents.length}`);
+                  
+                  // Update state immediately with new events and stop loading
+                  const sortedEvents = [...foundEvents].sort((a, b) => b.created_at - a.created_at);
+                  setEvents(sortedEvents);
+                  setLoading(false);
                 }
               }
               
