@@ -435,12 +435,7 @@ export default function UserProfile({
           </Button>
         </CardHeader>
         <CardContent>
-          {notesLoading ? (
-            <div className="text-center py-8">
-              <Loader2 className="h-6 w-6 mx-auto mb-2 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">Loading notes...</p>
-            </div>
-          ) : notesError ? (
+          {notesError ? (
             <div className="text-center py-8">
               <p className="text-sm text-destructive mb-2">Failed to load notes: {notesError}</p>
               <Button variant="outline" size="sm" onClick={refreshEvents}>
@@ -449,11 +444,20 @@ export default function UserProfile({
             </div>
           ) : userNotes.length === 0 ? (
             <div className="text-center py-8">
-              <MessageSquare className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
-              <p className="text-muted-foreground">No notes found</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                This user hasn't posted any notes yet, or they haven't propagated to the relays.
-              </p>
+              {notesLoading ? (
+                <>
+                  <Loader2 className="h-6 w-6 mx-auto mb-2 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">Loading notes...</p>
+                </>
+              ) : (
+                <>
+                  <MessageSquare className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
+                  <p className="text-muted-foreground">No notes found</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    This user hasn't posted any notes yet, or they haven't propagated to the relays.
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -480,7 +484,13 @@ export default function UserProfile({
                   </div>
                 </div>
               ))}
-              {userNotes.length >= 20 && (
+              {notesLoading && (
+                <div className="text-center py-2">
+                  <Loader2 className="h-4 w-4 mx-auto animate-spin text-primary" />
+                  <p className="text-xs text-muted-foreground mt-1">Loading more notes...</p>
+                </div>
+              )}
+              {!notesLoading && userNotes.length >= 20 && (
                 <div className="text-center pt-4">
                   <p className="text-xs text-muted-foreground">
                     Showing latest 20 notes
