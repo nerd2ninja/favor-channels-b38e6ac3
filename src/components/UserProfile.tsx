@@ -1,5 +1,4 @@
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { useNostrProfile } from '@/hooks/useNostrProfile';
 import { useNostrEvents } from '@/hooks/useNostrEvents';
@@ -43,7 +43,16 @@ export default function UserProfile({
   })();
 
   const { profile, loading, error, updateProfile, refreshProfile } = useNostrProfile(processedHexKey);
-  const { events: userNotes, loading: notesLoading, error: notesError, refreshEvents } = useNostrEvents(processedHexKey, [1]);
+  const { 
+    events: userNotes, 
+    loading: notesLoading, 
+    loadingMore: notesLoadingMore,
+    error: notesError, 
+    refreshEvents, 
+    loadMoreEvents,
+    hasMore
+  } = useNostrEvents(processedHexKey, [1]);
+
   const [editedProfile, setEditedProfile] = useState({
     name: '',
     about: '',
@@ -56,6 +65,18 @@ export default function UserProfile({
   });
   const [isEditing, setIsEditing] = useState(false);
   const { toast } = useToast();
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  // Infinite scroll handler
+  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
+    const isNearBottom = scrollTop + clientHeight >= scrollHeight - 100;
+    
+    if (isNearBottom && !notesLoadingMore && hasMore) {
+      console.log('UserProfile - Loading more notes due to scroll');
+      loadMoreEvents();
+    }
+  }, [notesLoadingMore, hasMore, loadMoreEvents]);
 
   useEffect(() => {
     if (profile) {
@@ -442,62 +463,75 @@ export default function UserProfile({
                 Try Again
               </Button>
             </div>
-          ) : userNotes.length === 0 ? (
+          ) : userNotes.length === 0 && !notesLoading ? (
             <div className="text-center py-8">
-              {notesLoading ? (
-                <>
-                  <Loader2 className="h-6 w-6 mx-auto mb-2 animate-spin text-primary" />
-                  <p className="text-sm text-muted-foreground">Loading notes...</p>
-                </>
-              ) : (
-                <>
-                  <MessageSquare className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
-                  <p className="text-muted-foreground">No notes found</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    This user hasn't posted any notes yet, or they haven't propagated to the relays.
-                  </p>
-                </>
-              )}
+              <MessageSquare className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
+              <p className="text-muted-foreground">No notes found</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                This user hasn't posted any notes yet, or they haven't propagated to the relays.
+              </p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {userNotes.map((note) => (
-                <div key={note.id} className="border rounded-lg p-4 space-y-3 bg-card/50">
-                  <div className="prose prose-sm max-w-none">
-                    <p className="whitespace-pre-wrap break-words m-0">{note.content}</p>
+            <ScrollArea 
+              ref={scrollAreaRef} 
+              className="h-96"
+              onScrollCapture={handleScroll}
+            >
+              <div className="space-y-4 pr-4">
+                {notesLoading && userNotes.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Loader2 className="h-6 w-6 mx-auto mb-2 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground">Loading notes...</p>
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="w-3 h-3" />
-                      {new Date(note.created_at * 1000).toLocaleDateString()} at{' '}
-                      {new Date(note.created_at * 1000).toLocaleTimeString()}
+                ) : (
+                  userNotes.map((note) => (
+                    <div key={note.id} className="border rounded-lg p-4 space-y-3 bg-card/50">
+                      <div className="prose prose-sm max-w-none">
+                        <p className="whitespace-pre-wrap break-words m-0 text-sm leading-relaxed">
+                          {note.content}
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t">
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Clock className="w-3 h-3" />
+                          {new Date(note.created_at * 1000).toLocaleDateString()} at{' '}
+                          {new Date(note.created_at * 1000).toLocaleTimeString([], { 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          })}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyToClipboard(note.id, 'Note ID')}
+                          className="h-auto px-2 py-1 text-xs hover:bg-muted"
+                        >
+                          <Copy className="w-3 h-3 mr-1" />
+                          {note.id.slice(0, 8)}...
+                        </Button>
+                      </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyToClipboard(note.id, 'Note ID')}
-                      className="h-auto px-2 py-1 text-xs hover:bg-muted"
-                    >
-                      <Copy className="w-3 h-3 mr-1" />
-                      {note.id.slice(0, 8)}...
-                    </Button>
+                  ))
+                )}
+                
+                {/* Loading more indicator */}
+                {notesLoadingMore && (
+                  <div className="text-center py-4">
+                    <Loader2 className="h-4 w-4 mx-auto mb-2 animate-spin text-primary" />
+                    <p className="text-xs text-muted-foreground">Loading more notes...</p>
                   </div>
-                </div>
-              ))}
-              {notesLoading && (
-                <div className="text-center py-2">
-                  <Loader2 className="h-4 w-4 mx-auto animate-spin text-primary" />
-                  <p className="text-xs text-muted-foreground mt-1">Loading more notes...</p>
-                </div>
-              )}
-              {!notesLoading && userNotes.length >= 20 && (
-                <div className="text-center pt-4">
-                  <p className="text-xs text-muted-foreground">
-                    Showing latest 20 notes
-                  </p>
-                </div>
-              )}
-            </div>
+                )}
+                
+                {/* End of notes indicator */}
+                {!hasMore && userNotes.length > 0 && !notesLoadingMore && (
+                  <div className="text-center py-4">
+                    <p className="text-xs text-muted-foreground">
+                      No more notes to load
+                    </p>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
           )}
         </CardContent>
       </Card>

@@ -1,21 +1,29 @@
-import { useState, useEffect, useCallback } from 'react';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Filter, Event } from 'nostr-tools';
 import { useRelays } from '@/hooks/useRelays';
 
 interface UseNostrEventsReturn {
   events: Event[];
   loading: boolean;
+  loadingMore: boolean;
   error: string | null;
   refreshEvents: () => void;
+  loadMoreEvents: () => void;
+  hasMore: boolean;
 }
 
 export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [1]): UseNostrEventsReturn {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
   const { relays } = useRelays();
+  const loadedEventIds = useRef(new Set<string>());
+  const oldestTimestamp = useRef<number | null>(null);
 
-  const fetchEvents = useCallback(async () => {
+  const fetchEvents = useCallback(async (isLoadingMore = false, until?: number) => {
     if (!userPublicKey || userPublicKey.length < 63) {
       console.log('useNostrEvents - Invalid userPublicKey, returning early');
       return;
@@ -25,7 +33,15 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
     const paddedPublicKey = userPublicKey.length === 63 ? '0' + userPublicKey : userPublicKey;
     console.log('useNostrEvents - Fetching events for:', paddedPublicKey.slice(0, 8) + '...');
 
-    setLoading(true);
+    if (isLoadingMore) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+      // Reset state for fresh load
+      setEvents([]);
+      loadedEventIds.current.clear();
+      oldestTimestamp.current = null;
+    }
     setError(null);
 
     try {
@@ -40,6 +56,11 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
         authors: [paddedPublicKey],
         limit: 20
       };
+
+      // Add until filter for pagination
+      if (until) {
+        filter.until = until;
+      }
       
       console.log('useNostrEvents - Using filter:', filter);
 
@@ -57,7 +78,7 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
           ws.onopen = () => {
             connectedRelays++;
             console.log(`useNostrEvents - Connected to relay ${index} (${relay}). Total connected: ${connectedRelays}`);
-            const reqMessage = JSON.stringify(['REQ', `events-${index}`, filter]);
+            const reqMessage = JSON.stringify(['REQ', `events-${index}-${Date.now()}`, filter]);
             console.log(`useNostrEvents - Sending REQ to relay ${index}:`, reqMessage);
             ws.send(reqMessage);
           };
@@ -72,14 +93,15 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
                 console.log(`useNostrEvents - Found event from relay ${index}:`, nostrEvent);
                 
                 // Only add if we don't already have this event
-                if (!foundEvents.some(e => e.id === nostrEvent.id)) {
+                if (!loadedEventIds.current.has(nostrEvent.id)) {
                   foundEvents.push(nostrEvent);
+                  loadedEventIds.current.add(nostrEvent.id);
                   console.log(`useNostrEvents - Added event, total: ${foundEvents.length}`);
                   
-                  // Update state immediately with new events and stop loading
-                  const sortedEvents = [...foundEvents].sort((a, b) => b.created_at - a.created_at);
-                  setEvents(sortedEvents);
-                  setLoading(false);
+                  // Update oldest timestamp
+                  if (!oldestTimestamp.current || nostrEvent.created_at < oldestTimestamp.current) {
+                    oldestTimestamp.current = nostrEvent.created_at;
+                  }
                 }
               }
               
@@ -118,7 +140,24 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
       foundEvents.sort((a, b) => b.created_at - a.created_at);
       
       console.log(`useNostrEvents - Final events count: ${foundEvents.length}`);
-      setEvents(foundEvents);
+      
+      if (isLoadingMore) {
+        // Append to existing events
+        setEvents(prev => {
+          const combined = [...prev, ...foundEvents];
+          // Remove duplicates and sort
+          const unique = combined.filter((event, index, arr) => 
+            arr.findIndex(e => e.id === event.id) === index
+          );
+          return unique.sort((a, b) => b.created_at - a.created_at);
+        });
+      } else {
+        // Replace events for fresh load
+        setEvents(foundEvents);
+      }
+
+      // Check if we have more events to load
+      setHasMore(foundEvents.length === 20);
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch events';
@@ -126,23 +165,32 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
       console.error('Events fetch error:', err);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, [userPublicKey, kinds, relays]);
 
   const refreshEvents = useCallback(() => {
-    fetchEvents();
+    fetchEvents(false);
   }, [fetchEvents]);
+
+  const loadMoreEvents = useCallback(() => {
+    if (loadingMore || !hasMore || !oldestTimestamp.current) return;
+    fetchEvents(true, oldestTimestamp.current - 1);
+  }, [fetchEvents, loadingMore, hasMore]);
 
   useEffect(() => {
     if (userPublicKey) {
-      fetchEvents();
+      fetchEvents(false);
     }
   }, [userPublicKey, fetchEvents]);
 
   return {
     events,
     loading,
+    loadingMore,
     error,
-    refreshEvents
+    refreshEvents,
+    loadMoreEvents,
+    hasMore
   };
 }
