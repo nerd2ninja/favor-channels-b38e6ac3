@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,20 +27,44 @@ export default function UserProfile({
   userPublicKey, 
   nostrSigning
 }: UserProfileProps) {
-  // Process the key first to get proper hex format
-  const { hexKey: processedHexKey } = (() => {
+  // Process the key to get proper hex format - memoized to prevent infinite loops
+  const { hexKey: processedHexKey, npub } = useMemo(() => {
+    console.log('UserProfile - processUserKey input:', userPublicKey, 'length:', userPublicKey?.length);
+    
+    // Remove any accidental "0" prefix from npub
     const cleanKey = userPublicKey?.startsWith('0npub') ? userPublicKey.slice(1) : userPublicKey;
+    console.log('UserProfile - cleaned key:', cleanKey);
+    
+    // If it's an npub, decode it to get hex
     if (cleanKey?.startsWith('npub')) {
       try {
         const decoded = nip19.decode(cleanKey);
         const hexKey = decoded.data as string;
-        return { hexKey: hexKey.length === 63 ? '0' + hexKey : hexKey };
+        console.log('UserProfile - decoded npub to hex:', hexKey, 'length:', hexKey?.length);
+        
+        // Ensure hex is 64 characters
+        const properHex = hexKey.length === 63 ? '0' + hexKey : hexKey;
+        return { hexKey: properHex, npub: cleanKey };
       } catch (error) {
-        return { hexKey: '' };
+        console.error('UserProfile - Error decoding npub:', error);
+        return { hexKey: '', npub: '' };
       }
     }
-    return { hexKey: cleanKey?.length === 63 ? '0' + cleanKey : cleanKey || '' };
-  })();
+    
+    // If it's hex, ensure it's 64 characters and generate npub
+    if (cleanKey?.length >= 63) {
+      const properHex = cleanKey.length === 63 ? '0' + cleanKey : cleanKey;
+      try {
+        const npub = nip19.npubEncode(properHex);
+        return { hexKey: properHex, npub };
+      } catch (error) {
+        console.error('UserProfile - Error encoding npub from hex:', error);
+        return { hexKey: properHex, npub: '' };
+      }
+    }
+    
+    return { hexKey: '', npub: '' };
+  }, [userPublicKey]);
 
   const { profile, loading, error, updateProfile, refreshProfile } = useNostrProfile(processedHexKey);
   const { 
@@ -93,47 +117,7 @@ export default function UserProfile({
     }
   }, [profile]);
 
-  // Helper function to process the userPublicKey (could be npub or hex)
-  const processUserKey = (key: string): { hexKey: string; npub: string } => {
-    console.log('UserProfile - processUserKey input:', key, 'length:', key?.length);
-    
-    // Remove any accidental "0" prefix from npub
-    const cleanKey = key?.startsWith('0npub') ? key.slice(1) : key;
-    console.log('UserProfile - cleaned key:', cleanKey);
-    
-    // If it's an npub, decode it to get hex
-    if (cleanKey?.startsWith('npub')) {
-      try {
-        const decoded = nip19.decode(cleanKey);
-        const hexKey = decoded.data as string;
-        console.log('UserProfile - decoded npub to hex:', hexKey, 'length:', hexKey?.length);
-        
-        // Ensure hex is 64 characters
-        const properHex = hexKey.length === 63 ? '0' + hexKey : hexKey;
-        return { hexKey: properHex, npub: cleanKey };
-      } catch (error) {
-        console.error('UserProfile - Error decoding npub:', error);
-        return { hexKey: '', npub: '' };
-      }
-    }
-    
-    // If it's hex, ensure it's 64 characters and generate npub
-    if (cleanKey?.length >= 63) {
-      const properHex = cleanKey.length === 63 ? '0' + cleanKey : cleanKey;
-      try {
-        const npub = nip19.npubEncode(properHex);
-        return { hexKey: properHex, npub };
-      } catch (error) {
-        console.error('UserProfile - Error encoding npub from hex:', error);
-        return { hexKey: properHex, npub: '' };
-      }
-    }
-    
-    return { hexKey: '', npub: '' };
-  };
-
-  const { hexKey, npub } = processUserKey(userPublicKey);
-  console.log('UserProfile - processed keys:', { hexKey: hexKey?.slice(0, 8) + '...', npub: npub?.slice(0, 16) + '...' });
+  console.log('UserProfile - processed keys:', { hexKey: processedHexKey?.slice(0, 8) + '...', npub: npub?.slice(0, 16) + '...' });
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -413,19 +397,19 @@ export default function UserProfile({
             </div>
           )}
           
-          {hexKey && (
+          {processedHexKey && (
             <div>
               <Label className="text-sm font-medium text-muted-foreground">
                 Hex Public Key
               </Label>
               <div className="flex items-center gap-2 mt-1">
                 <code className="flex-1 px-3 py-2 bg-muted rounded-md text-sm font-mono break-all">
-                  {hexKey}
+                  {processedHexKey}
                 </code>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => copyToClipboard(hexKey, 'Hex public key')}
+                  onClick={() => copyToClipboard(processedHexKey, 'Hex public key')}
                 >
                   <Copy className="w-4 h-4" />
                 </Button>
