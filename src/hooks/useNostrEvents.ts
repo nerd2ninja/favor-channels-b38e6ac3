@@ -156,12 +156,18 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
           ws.onerror = (error) => {
             console.error(`useNostrEvents - WebSocket error for relay ${index} (${relay}):`, error);
             clearTimeout(timeout);
+            ws.close(); // Ensure connection is closed
             completedConnections++;
             
             // Stop loading once all connections are done, even with errors
             if (completedConnections === totalConnections) {
               setLoading(false);
               setLoadingMore(false);
+              
+              // If no relays connected, show error
+              if (connectedRelays === 0) {
+                setError('Unable to connect to any Nostr relays');
+              }
             }
             resolve();
           };
