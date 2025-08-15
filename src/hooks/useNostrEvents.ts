@@ -24,6 +24,8 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
   const oldestTimestamp = useRef<number | null>(null);
 
   const fetchEvents = useCallback(async (isLoadingMore = false, until?: number) => {
+    console.log('useNostrEvents - fetchEvents called:', { userPublicKey, isLoadingMore, until });
+    
     if (!userPublicKey || userPublicKey.length < 63) {
       console.log('useNostrEvents - Invalid userPublicKey, returning early');
       setLoading(false);
@@ -39,7 +41,7 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
       setLoadingMore(true);
     } else {
       setLoading(true);
-      // Reset state for fresh load
+      console.log('useNostrEvents - Fresh load: resetting state');
       setEvents([]);
       loadedEventIds.current.clear();
       oldestTimestamp.current = null;
@@ -230,6 +232,10 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
   }, [userPublicKey, kinds, relays]);
 
   const refreshEvents = useCallback(() => {
+    console.log('useNostrEvents - refreshEvents called');
+    setEvents([]);
+    loadedEventIds.current.clear();
+    oldestTimestamp.current = null;
     fetchEvents(false);
   }, [fetchEvents]);
 
@@ -239,7 +245,9 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
   }, [fetchEvents, loadingMore, hasMore]);
 
   useEffect(() => {
+    console.log('useNostrEvents - useEffect triggered:', { userPublicKey });
     if (userPublicKey) {
+      console.log('useNostrEvents - Calling fetchEvents from useEffect');
       fetchEvents(false);
     }
   }, [userPublicKey, fetchEvents]);
