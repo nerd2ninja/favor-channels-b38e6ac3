@@ -229,7 +229,7 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [userPublicKey, kinds, relays]);
+  }, [userPublicKey, kinds, relays]); // Remove events dependency to prevent infinite loop
 
   const refreshEvents = useCallback(() => {
     console.log('useNostrEvents - refreshEvents called');
@@ -237,12 +237,12 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
     loadedEventIds.current.clear();
     oldestTimestamp.current = null;
     fetchEvents(false);
-  }, [fetchEvents]);
+  }, [userPublicKey, kinds, relays]); // Use same deps as fetchEvents
 
   const loadMoreEvents = useCallback(() => {
     if (loadingMore || !hasMore || !oldestTimestamp.current) return;
     fetchEvents(true, oldestTimestamp.current - 1);
-  }, [fetchEvents, loadingMore, hasMore]);
+  }, [loadingMore, hasMore, userPublicKey, kinds, relays]); // Use same deps as fetchEvents
 
   useEffect(() => {
     console.log('useNostrEvents - useEffect triggered:', { userPublicKey });
@@ -250,7 +250,7 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
       console.log('useNostrEvents - Calling fetchEvents from useEffect');
       fetchEvents(false);
     }
-  }, [userPublicKey, fetchEvents]);
+  }, [userPublicKey, kinds, relays]); // Remove fetchEvents from dependencies
 
   return {
     events,
