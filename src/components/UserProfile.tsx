@@ -12,7 +12,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useNostrProfile } from '@/hooks/useNostrProfile';
 import { useNostrEvents } from '@/hooks/useNostrEvents';
 import RelayManager from '@/components/RelayManager';
-import { User, Edit, Copy, Globe, Mail, MapPin, RefreshCw, Loader2, MessageSquare, Clock } from 'lucide-react';
+import NoteCard from '@/components/NoteCard';
+import { User, Edit, Copy, Globe, Mail, MapPin, RefreshCw, Loader2, MessageSquare } from 'lucide-react';
 import { nip19 } from 'nostr-tools';
 
 interface UserProfileProps {
@@ -469,32 +470,7 @@ export default function UserProfile({
                   </div>
                 ) : (
                   userNotes.map((note) => (
-                    <div key={note.id} className="border rounded-lg p-4 space-y-3 bg-card/50">
-                      <div className="prose prose-sm max-w-none">
-                        <p className="whitespace-pre-wrap break-words m-0 text-sm leading-relaxed">
-                          {note.content}
-                        </p>
-                      </div>
-                      <div className="flex items-center justify-between pt-2 border-t">
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Clock className="w-3 h-3" />
-                          {new Date(note.created_at * 1000).toLocaleDateString()} at{' '}
-                          {new Date(note.created_at * 1000).toLocaleTimeString([], { 
-                            hour: '2-digit', 
-                            minute: '2-digit' 
-                          })}
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => copyToClipboard(note.id, 'Note ID')}
-                          className="h-auto px-2 py-1 text-xs hover:bg-muted"
-                        >
-                          <Copy className="w-3 h-3 mr-1" />
-                          {note.id.slice(0, 8)}...
-                        </Button>
-                      </div>
-                    </div>
+                    <NoteCard key={note.id} note={note} />
                   ))
                 )}
                 
