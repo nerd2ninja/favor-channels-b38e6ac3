@@ -259,11 +259,11 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
 
   useEffect(() => {
     console.log('useNostrEvents - useEffect triggered:', { userPublicKey });
-    if (userPublicKey) {
+    if (userPublicKey && userPublicKey.length >= 63) {
       console.log('useNostrEvents - Calling fetchEvents from useEffect');
       fetchEvents(false);
     }
-  }, [fetchEvents]); // Use fetchEvents directly since it's now stable
+  }, [userPublicKey, stableKinds.join(','), stableRelays.join(',')]); // Use primitive dependencies
 
   return {
     events,
