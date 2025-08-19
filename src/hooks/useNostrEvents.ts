@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Filter, Event } from 'nostr-tools';
 import { useRelays } from '@/hooks/useRelays';
 
@@ -22,9 +22,22 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
   const { relays } = useRelays();
   const loadedEventIds = useRef(new Set<string>());
   const oldestTimestamp = useRef<number | null>(null);
+  
+  // Memoize kinds and relays to prevent unnecessary re-renders
+  const stableKinds = useMemo(() => kinds, [kinds.join(',')]);
+  const stableRelays = useMemo(() => relays, [relays.join(',')]);
+  
+  // Prevent multiple concurrent fetches
+  const isFetching = useRef(false);
 
   const fetchEvents = useCallback(async (isLoadingMore = false, until?: number) => {
-    console.log('useNostrEvents - fetchEvents called:', { userPublicKey, isLoadingMore, until });
+    console.log('useNostrEvents - fetchEvents called:', { userPublicKey, isLoadingMore, until, isFetching: isFetching.current });
+    
+    // Prevent multiple concurrent fetches
+    if (isFetching.current) {
+      console.log('useNostrEvents - Already fetching, skipping');
+      return;
+    }
     
     if (!userPublicKey || userPublicKey.length < 63) {
       console.log('useNostrEvents - Invalid userPublicKey, returning early');
@@ -32,6 +45,8 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
       setLoadingMore(false);
       return;
     }
+    
+    isFetching.current = true;
 
     // Ensure userPublicKey is padded to 64 characters
     const paddedPublicKey = userPublicKey.length === 63 ? '0' + userPublicKey : userPublicKey;
@@ -49,14 +64,8 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
     setError(null);
 
     try {
-      const connections = relays.map((relay, index) => {
-        console.log(`useNostrEvents - Creating connection ${index} to ${relay}`);
-        const ws = new WebSocket(relay);
-        return { ws, relay, index };
-      });
-
       const filter: Filter = {
-        kinds,
+        kinds: stableKinds,
         authors: [paddedPublicKey],
         limit: 20
       };
@@ -71,9 +80,11 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
       let foundEvents: Event[] = [];
       let connectedRelays = 0;
       let completedConnections = 0;
-      const totalConnections = connections.length;
+      const totalConnections = stableRelays.length;
 
-      const promises = connections.map(({ ws, relay, index }) => {
+      const promises = stableRelays.map((relay, index) => {
+        console.log(`useNostrEvents - Creating connection ${index} to ${relay}`);
+        const ws = new WebSocket(relay);
         return new Promise<void>((resolve) => {
           const timeout = setTimeout(() => {
             console.log(`useNostrEvents - Timeout for relay ${index} (${relay})`);
@@ -104,7 +115,7 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
               const message = JSON.parse(event.data);
               console.log(`useNostrEvents - Message from relay ${index} (${relay}):`, message);
               
-              if (message[0] === 'EVENT' && kinds.includes(message[2]?.kind)) {
+              if (message[0] === 'EVENT' && stableKinds.includes(message[2]?.kind)) {
                 const nostrEvent = message[2] as Event;
                 console.log(`useNostrEvents - Found event from relay ${index}:`, nostrEvent);
                 
@@ -228,21 +239,23 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
     } finally {
       setLoading(false);
       setLoadingMore(false);
+      isFetching.current = false; // Reset fetching flag
     }
-  }, [userPublicKey, kinds, relays]); // Remove events dependency to prevent infinite loop
+  }, [userPublicKey, stableKinds, stableRelays]); // Use stable versions to prevent infinite loop
 
   const refreshEvents = useCallback(() => {
     console.log('useNostrEvents - refreshEvents called');
+    isFetching.current = false; // Reset fetching flag
     setEvents([]);
     loadedEventIds.current.clear();
     oldestTimestamp.current = null;
     fetchEvents(false);
-  }, [userPublicKey, kinds, relays]); // Use same deps as fetchEvents
+  }, [fetchEvents]);
 
   const loadMoreEvents = useCallback(() => {
     if (loadingMore || !hasMore || !oldestTimestamp.current) return;
     fetchEvents(true, oldestTimestamp.current - 1);
-  }, [loadingMore, hasMore, userPublicKey, kinds, relays]); // Use same deps as fetchEvents
+  }, [fetchEvents, loadingMore, hasMore]);
 
   useEffect(() => {
     console.log('useNostrEvents - useEffect triggered:', { userPublicKey });
@@ -250,7 +263,7 @@ export function useNostrEvents(userPublicKey: string | null, kinds: number[] = [
       console.log('useNostrEvents - Calling fetchEvents from useEffect');
       fetchEvents(false);
     }
-  }, [userPublicKey, kinds, relays]); // Remove fetchEvents from dependencies
+  }, [fetchEvents]); // Use fetchEvents directly since it's now stable
 
   return {
     events,
