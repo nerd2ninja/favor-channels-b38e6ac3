@@ -34,30 +34,52 @@ export function useNostrSigning() {
   });
 
   const [pendingRequests] = useState<Map<string, SigningRequest>>(new Map());
-  const [relayConnection] = useState<WebSocket[]>([]);
+  const [relayConnections, setRelayConnections] = useState<WebSocket[]>([]);
 
   const generateRequestId = () => Math.random().toString(36).substring(2, 15);
 
+
   const connectToRelays = useCallback(async (relays: string[]) => {
+    console.log('useNostrSigning - Connecting to relays for NIP-46:', relays);
+    
+    // Close existing connections
+    relayConnections.forEach(ws => ws.close());
+    
     // Connect to relays for NIP-46 communication
     const connections = relays.map(relay => {
       const ws = new WebSocket(relay);
-      ws.onopen = () => console.log(`Connected to relay: ${relay}`);
+      ws.onopen = () => {
+        console.log(`useNostrSigning - Connected to relay: ${relay}`);
+        // Subscribe to events for our client pubkey
+        const sub = ['REQ', 'nip46-sub', {
+          kinds: [24133],
+          '#p': [state.clientKeypair?.publicKey],
+          since: Math.floor(Date.now() / 1000)
+        }];
+        ws.send(JSON.stringify(sub));
+      };
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
           if (message[0] === 'EVENT' && message[2]?.kind === 24133) {
+            console.log('useNostrSigning - Received NIP-46 response:', message[2]);
             handleNostrResponse(message[2]);
           }
         } catch (error) {
           console.error('Error parsing relay message:', error);
         }
       };
+      ws.onerror = (error) => {
+        console.error(`WebSocket error for ${relay}:`, error);
+      };
+      ws.onclose = () => {
+        console.log(`useNostrSigning - Disconnected from relay: ${relay}`);
+      };
       return ws;
     });
     
-    relayConnection.splice(0, relayConnection.length, ...connections);
-  }, [relayConnection]);
+    setRelayConnections(connections);
+  }, [relayConnections, state.clientKeypair]);
 
   const handleNostrResponse = useCallback(async (event: Event) => {
     if (!state.clientKeypair || !state.remoteSignerPublicKey) return;
@@ -114,11 +136,21 @@ export function useNostrSigning() {
 
     // Send to all connected relays
     const eventMessage = ['EVENT', event];
-    relayConnection.forEach(ws => {
+    console.log('useNostrSigning - Sending NIP-46 request to relays:', event);
+    
+    let sentToRelays = 0;
+    relayConnections.forEach(ws => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(eventMessage));
+        sentToRelays++;
       }
     });
+    
+    console.log(`useNostrSigning - Sent request to ${sentToRelays} relays`);
+    
+    if (sentToRelays === 0) {
+      throw new Error('No relay connections available');
+    }
 
     // Return a promise that resolves when we get the response
     return new Promise((resolve, reject) => {
@@ -138,7 +170,7 @@ export function useNostrSigning() {
         }
       }, 30000); // 30 second timeout
     });
-  }, [state, relayConnection, pendingRequests]);
+  }, [state, relayConnections, pendingRequests]);
 
   const signEvent = useCallback(async (unsignedEvent: Partial<Event>): Promise<Event> => {
     try {
@@ -250,8 +282,8 @@ export function useNostrSigning() {
 
   const disconnect = useCallback(() => {
     // Close relay connections
-    relayConnection.forEach(ws => ws.close());
-    relayConnection.length = 0;
+    relayConnections.forEach(ws => ws.close());
+    setRelayConnections([]);
 
     // Clear pending requests
     pendingRequests.clear();
@@ -267,7 +299,7 @@ export function useNostrSigning() {
     localStorage.removeItem('nostr-user-public-key');
     localStorage.removeItem('nostr-remote-signer-pubkey');
     localStorage.removeItem('nostr-client-keypair');
-  }, [relayConnection, pendingRequests]);
+  }, [relayConnections, pendingRequests]);
 
   return {
     ...state,
