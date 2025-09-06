@@ -42,22 +42,26 @@ export function useNostrSigning() {
   const connectToRelays = useCallback(async (relays: string[]) => {
     console.log('useNostrSigning - Connecting to relays for NIP-46:', relays);
     
-    // Close existing connections
-    relayConnections.forEach(ws => ws.close());
-    
     // Connect to relays for NIP-46 communication
     const connections = relays.map(relay => {
       const ws = new WebSocket(relay);
+      
       ws.onopen = () => {
         console.log(`useNostrSigning - Connected to relay: ${relay}`);
-        // Subscribe to events for our client pubkey
-        const sub = ['REQ', 'nip46-sub', {
-          kinds: [24133],
-          '#p': [state.clientKeypair?.publicKey],
-          since: Math.floor(Date.now() / 1000)
-        }];
-        ws.send(JSON.stringify(sub));
+        // Wait a moment then subscribe to events for our client pubkey
+        setTimeout(() => {
+          if (state.clientKeypair?.publicKey && ws.readyState === WebSocket.OPEN) {
+            const sub = ['REQ', 'nip46-sub', {
+              kinds: [24133],
+              '#p': [state.clientKeypair.publicKey],
+              since: Math.floor(Date.now() / 1000)
+            }];
+            ws.send(JSON.stringify(sub));
+            console.log(`useNostrSigning - Subscribed to NIP-46 events on ${relay}`);
+          }
+        }, 1000);
       };
+      
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
@@ -69,17 +73,20 @@ export function useNostrSigning() {
           console.error('Error parsing relay message:', error);
         }
       };
+      
       ws.onerror = (error) => {
         console.error(`WebSocket error for ${relay}:`, error);
       };
-      ws.onclose = () => {
-        console.log(`useNostrSigning - Disconnected from relay: ${relay}`);
+      
+      ws.onclose = (event) => {
+        console.log(`useNostrSigning - Disconnected from relay: ${relay}, code: ${event.code}, reason: ${event.reason}`);
       };
+      
       return ws;
     });
     
     setRelayConnections(connections);
-  }, [relayConnections, state.clientKeypair]);
+  }, [state.clientKeypair]);
 
   const handleNostrResponse = useCallback(async (event: Event) => {
     if (!state.clientKeypair || !state.remoteSignerPublicKey) return;
@@ -269,6 +276,8 @@ export function useNostrSigning() {
   }, [state.userPublicKey, signEvent]);
 
   const initialize = useCallback((userPubkey: string, remoteSignerPubkey: string, clientKeypair: any) => {
+    console.log('useNostrSigning - Initializing with:', { userPubkey, remoteSignerPubkey, hasKeypair: !!clientKeypair });
+    
     setState({
       isConnected: true,
       userPublicKey: userPubkey,
@@ -276,8 +285,14 @@ export function useNostrSigning() {
       clientKeypair
     });
 
-    // Initialize relay connections
-    connectToRelays(['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net']);
+    // Use a timeout to ensure state is set before connecting to relays
+    setTimeout(() => {
+      connectToRelays([
+        'wss://relay.nostr.band', 
+        'wss://nostr.wine', 
+        'wss://relay.snort.social'
+      ]);
+    }, 500);
   }, [connectToRelays]);
 
   const disconnect = useCallback(() => {
