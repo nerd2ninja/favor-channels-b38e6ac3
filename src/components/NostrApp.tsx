@@ -298,6 +298,10 @@ export default function NostrApp() {
       setUserPublicKey(remoteSignerPubkey);
       localStorage.setItem('nostr-user-public-key', remoteSignerPubkey);
       
+      // Also save the client keypair and remote signer pubkey
+      localStorage.setItem('nostr-client-keypair', JSON.stringify(keypair));
+      localStorage.setItem('nostr-remote-signer-pubkey', remoteSignerPubkey);
+      
       // Mark as authenticated and close the dialog
       setIsAuthenticated(true);
       setShowNostrConnect(false);
