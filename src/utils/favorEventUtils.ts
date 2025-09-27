@@ -1,4 +1,5 @@
 import { Event } from 'nostr-tools';
+import CryptoJS from 'crypto-js';
 import {
   FAVOR_EVENT_KINDS,
   UnsignedFavorEvent,
@@ -7,19 +8,6 @@ import {
   PreapprovalPayload
 } from '../types/favorEvents';
 
-// Simple SHA256 implementation for channel ID generation
-function sha256Simple(data: string): string {
-  // For now, use a simple hash based on the input string
-  // In production, you'd want to use a proper crypto library
-  let hash = 0;
-  for (let i = 0; i < data.length; i++) {
-    const char = data.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-  return Math.abs(hash).toString(16).padStart(64, '0');
-}
-
 /**
  * Generate channel ID from participants and creation time
  * Formula: sha256(sorted(pubkeys) || creation_time)
@@ -27,7 +15,7 @@ function sha256Simple(data: string): string {
 export function generateChannelId(participants: string[], creationTime: number): string {
   const sortedPubkeys = [...participants].sort();
   const data = sortedPubkeys.join('') + creationTime.toString();
-  return sha256Simple(data);
+  return CryptoJS.SHA256(data).toString(CryptoJS.enc.Hex);
 }
 
 /**

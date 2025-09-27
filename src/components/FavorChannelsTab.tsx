@@ -4,10 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, User } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
+import { Plus, User, Code } from 'lucide-react';
 import { getFavorChannels, addFavorEntry, FavorChannel } from '@/data/favorChannels';
 import { useNostrSigning } from '@/hooks/useNostrSigning';
 import { useToast } from '@/hooks/use-toast';
+import { FavorEventsDemo } from './FavorEventsDemo';
 
 interface FavorChannelsTabProps {
   nostrSigning: ReturnType<typeof useNostrSigning>;
@@ -19,6 +21,7 @@ export default function FavorChannelsTab({ nostrSigning }: FavorChannelsTabProps
   const [favorAmount, setFavorAmount] = useState(1);
   const [favorDirection, setFavorDirection] = useState<'owe' | 'owed'>('owe');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [showEventsDemo, setShowEventsDemo] = useState(false);
   const { toast } = useToast();
 
   const handleAddFavor = async () => {
@@ -97,64 +100,82 @@ export default function FavorChannelsTab({ nostrSigning }: FavorChannelsTabProps
   };
 
   return (
-    <div className="p-4 space-y-4 pb-20">
+    <div className="p-4 space-y-6 pb-20">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Favor Channels</h1>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="rounded-full" size="sm">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Entry
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Favor Entry</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="npub">Person's npub</Label>
-                <Input
-                  id="npub"
-                  value={newPersonNpub}
-                  onChange={(e) => setNewPersonNpub(e.target.value)}
-                  placeholder="npub1..."
-                />
-              </div>
-              <div>
-                <Label htmlFor="amount">Number of favors</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  min="1"
-                  value={favorAmount}
-                  onChange={(e) => setFavorAmount(parseInt(e.target.value) || 1)}
-                />
-              </div>
-              <div>
-                <Label>Direction</Label>
-                <div className="flex gap-2 mt-2">
-                  <Button
-                    variant={favorDirection === 'owe' ? 'default' : 'outline'}
-                    onClick={() => setFavorDirection('owe')}
-                  >
-                    I owe them
-                  </Button>
-                  <Button
-                    variant={favorDirection === 'owed' ? 'default' : 'outline'}
-                    onClick={() => setFavorDirection('owed')}
-                  >
-                    They owe me
-                  </Button>
-                </div>
-              </div>
-              <Button onClick={handleAddFavor} className="w-full">
-                Add Favor Entry
+        <div className="flex gap-2">
+          <Button 
+            variant="outline"
+            size="sm"
+            onClick={() => setShowEventsDemo(!showEventsDemo)}
+          >
+            <Code className="h-4 w-4 mr-2" />
+            {showEventsDemo ? 'Hide' : 'Show'} Events Demo
+          </Button>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="rounded-full" size="sm">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Entry
               </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Favor Entry</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="npub">Person's npub</Label>
+                  <Input
+                    id="npub"
+                    value={newPersonNpub}
+                    onChange={(e) => setNewPersonNpub(e.target.value)}
+                    placeholder="npub1..."
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="amount">Number of favors</Label>
+                  <Input
+                    id="amount"
+                    type="number"
+                    min="1"
+                    value={favorAmount}
+                    onChange={(e) => setFavorAmount(parseInt(e.target.value) || 1)}
+                  />
+                </div>
+                <div>
+                  <Label>Direction</Label>
+                  <div className="flex gap-2 mt-2">
+                    <Button
+                      variant={favorDirection === 'owe' ? 'default' : 'outline'}
+                      onClick={() => setFavorDirection('owe')}
+                    >
+                      I owe them
+                    </Button>
+                    <Button
+                      variant={favorDirection === 'owed' ? 'default' : 'outline'}
+                      onClick={() => setFavorDirection('owed')}
+                    >
+                      They owe me
+                    </Button>
+                  </div>
+                </div>
+                <Button onClick={handleAddFavor} className="w-full">
+                  Add Favor Entry
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
+
+      {/* Favor Events Demo - Core Implementation */}
+      {showEventsDemo && (
+        <>
+          <FavorEventsDemo nostrSigning={nostrSigning} />
+          <Separator className="my-6" />
+        </>
+      )}
 
       {channels.length === 0 ? (
         <Card>
